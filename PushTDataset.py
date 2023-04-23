@@ -187,14 +187,13 @@ def load_dataset_push_t():
     )
     return dataset
 
-def load_dataset_LQR2D():
+
+def __load__(name):
     dataset = load_dataset_push_t()
-    f = open('datasets/dataset_lqr.pkl', 'rb')
+    f = open(f'datasets/dataset_{name}.pkl', 'rb')
     synthetic_ours = pickle.load(f)
     f.close()
-    synthetic_ours['obs'] = synthetic_ours['observations']
-    synthetic_ours['action'] = synthetic_ours['actions']
-    del synthetic_ours['actions'], synthetic_ours['observations']
+
     finish = synthetic_ours['finish_token'].astype(np.int8)
     episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
     del synthetic_ours['finish_token']
@@ -202,11 +201,16 @@ def load_dataset_LQR2D():
     dataset.episode_ends = episode_ends
     dataset.__refresh__()
 
+    return dataset
+
+
+def load_dataset_lqr2d():
+    name = 'LQR2D'
+    dataset = __load__(name)
+
     # observation and action dimensions
     obs_dim = 4
     action_dim = 2
-
-    name = 'LQR2D'
 
     # this depends on how carlo have generated the data
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]])  # x, xdot, y, ydot
@@ -217,7 +221,8 @@ def load_dataset_LQR2D():
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
-def load_dataset_LQR2D_observation():
+
+def load_dataset_lqr2d_observation():
     dataset = load_dataset_push_t()
     f = open('datasets/dataset_lqr.pkl', 'rb')
     synthetic_ours = pickle.load(f)
@@ -247,25 +252,15 @@ def load_dataset_LQR2D_observation():
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
-def load_dataset_LQR3D():
-    dataset = load_dataset_push_t()
-    f = open('datasets/3Ddataset_lqr.pkl', 'rb')
-    synthetic_ours = pickle.load(f)
-    f.close()
-    synthetic_ours['obs'] = synthetic_ours['observations']
-    synthetic_ours['action'] = synthetic_ours['actions']
-    del synthetic_ours['actions'], synthetic_ours['observations']
-    finish = synthetic_ours['finish_token'].astype(np.int8)
-    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1 ])
-    del synthetic_ours['finish_token']
-    dataset.train_data = synthetic_ours
-    dataset.episode_ends = episode_ends
-    dataset.__refresh__()
+
+def load_dataset_lqr3d():
+    name = 'LQR3D'
+    dataset = __load__(name)
     # observation and action dimensions
 
     obs_dim = 6
     action_dim = 3
-    name = 'LQR3D'
+
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2], _obs[4]]) # x, xdot, y, ydot, z, zdot
     fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3], _obs[5]]) # x, xdot, y, ydot, z, zdot
 
@@ -275,22 +270,14 @@ def load_dataset_LQR3D():
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
 
-def load_dataset_Drone():
-    dataset = load_dataset_push_t()
-    f = open('datasets/Drone_dataset_lqr.pkl', 'rb')
-    synthetic_ours = pickle.load(f)
-    f.close()
-    finish = synthetic_ours['finish_token'].astype(np.int8)
-    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
-    del synthetic_ours['finish_token']
-    dataset.train_data = synthetic_ours
-    dataset.episode_ends = episode_ends
-    dataset.__refresh__()
+def load_dataset_drone():
+    name = 'LQRDrone'
+    dataset = __load__(name)
 
     # observation and action dimensions
     obs_dim = 12
     action_dim = 4
-    name = 'LQRDrone'
+
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[1], _obs[2]]) # x, y, z, xdot, ydot, zdot
     fn_speed = lambda _obs: np.linalg.norm([_obs[3], _obs[4], _obs[5]]) # x, y, z, xdot, ydot, zdot
 
