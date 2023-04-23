@@ -1,4 +1,15 @@
 logs/
+mavic/trajectories/*
+pusht_demo.ipynb
+
+# Hidden files
+.*
+
+# Video, zip, pickle, checkpoints
+*.mp4
+*.pickle
+*.zip
+*.ckpt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

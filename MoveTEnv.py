@@ -7,7 +7,8 @@ from draw import DrawOptions
 #@markdown **Goal**: push the gray T-block into the green area.
 #@markdown
 #@markdown Adapted from [Implicit Behavior Cloning](https://implicitbc.github.io/)
-
+#@markdown ### **Env Demo**
+#@markdown Standard Gym Env (0.21.0 API)
 # env
 
 TYPE=np.float32
@@ -74,6 +75,8 @@ class PushTEnv(gym.Env):
         self.RL_NUM_STEP = 50
         self.RL_cnt_step = 0
 
+        self.coverage = None
+
     def seed(self, seed=None):
         if seed is None:
             seed = np.random.randint(0,25536)
@@ -81,7 +84,7 @@ class PushTEnv(gym.Env):
         self.np_random = np.random.default_rng(seed)
 
     # def reset(self):
-    def reset(self, *, seed=None, options=None):
+    def reset(self, seed=None): # *, seed=None, options=None
         # seed = self._seed
         self.seed(seed=seed)
 
@@ -95,17 +98,18 @@ class PushTEnv(gym.Env):
         # use legacy RandomState for compatiblity
         state = self.reset_to_state
         if state is None:
+            # i'm afraid every simulation is the same, set the seed just once
             rs = np.random.RandomState(seed=seed)
             state = np.array([
-                rs.randint(50, 450), rs.randint(50, 450),
-                rs.randint(100, 400), rs.randint(100, 400),
+                rs.randint(50, 450), #X
+                rs.randint(50, 450), #Y
+                # np.random.randint(50, 450), #Z
                 rs.randn() * 2 * np.pi - np.pi
                 ])
         self._set_state(state)
 
         observation = self._get_obs()
-        # return observation
-        return observation, {}
+        return observation
 
     def step(self, action):
         dt = 1.0 / self.sim_hz
@@ -135,24 +139,27 @@ class PushTEnv(gym.Env):
         goal_geom = pymunk_to_shapely(goal_body, self.agent.shapes) #@matteo self.block
         block_geom = pymunk_to_shapely(self.agent, self.agent.shapes) #@matteo
 
-        weight_dist = 1e-3
+        weight_dist = 1e-4
         weight_angl = 1e-3
         weight_cov = 10
 
         intersection_area = goal_geom.intersection(block_geom).area
         goal_area = goal_geom.area
-        coverage = intersection_area / goal_area
-        reward = np.clip(coverage / self.success_threshold, 0, 1) * weight_cov
-        reward -= sum(self.goal_pose[0:1] - list(self.agent.position))**2 * weight_dist
+        self.coverage = intersection_area / goal_area
+        reward = np.clip(self.coverage / self.success_threshold, 0, 1) * weight_cov
+        # reward -= sum(self.goal_pose[0:1] - list(self.agent.position))**2 * weight_dist
         # reward -= sum(self.goal_pose[2] - self.agent.angle)**2 * weight_angl
 
-        done = coverage > self.success_threshold or self.RL_cnt_step > 80
+        done = self.coverage > self.success_threshold # or self.RL_cnt_step > 80
 
         observation = self._get_obs()
         info = self._get_info()
 
         self.RL_cnt_step += 1
         # reward-= 0.0001
+        if self.RL_cnt_step > 80:
+            done = True
+            reward = -10
 
         return observation, reward, done, info
 
@@ -173,7 +180,6 @@ class PushTEnv(gym.Env):
     def _get_obs(self):
         obs = np.array(
             tuple(self.agent.position) \
-            + tuple(self.agent.position) \
             + (self.agent.angle % (2 * np.pi),)) #block.angle
         return obs
 
@@ -260,16 +266,19 @@ class PushTEnv(gym.Env):
     def _set_state(self, state):
         if isinstance(state, np.ndarray):
             state = state.tolist()
-        pos_agent = state[:2]
-        pos_block = state[2:4]
-        rot_block = state[4]
-        rot_agent = state[4]
-        self.agent.position = pos_agent
-        self.agent.angle = rot_agent
+        pos_agent = state[:2] # x y z
+        # pos_block = state[2:4]
+        # rot_block = state[4]
+        rot_agent = state[2]
+
         # setting angle rotates with respect to center of mass
         # therefore will modify the geometric position
         # if not the same as CoM
         # therefore should be modified first.
+
+        self.agent.angle = rot_agent
+        self.agent.position = pos_agent
+
 
         # if self.legacy:
         #     # for compatiblity with legacy data
@@ -282,6 +291,8 @@ class PushTEnv(gym.Env):
         # Run physics to take effect
         self.space.step(1.0 / self.sim_hz)
     
+    ''' 
+    # commented out @matteo
     def _set_state_local(self, state_local):
         agent_pos_local = state_local[:2]
         block_pose_local = state_local[2:]
@@ -301,7 +312,7 @@ class PushTEnv(gym.Env):
                 + [tf_img_new.rotation])
         self._set_state(new_state)
         return new_state
-
+    '''
     def _setup(self):
         self.space = pymunk.Space()
         self.space.gravity = 0, 0
@@ -330,7 +341,7 @@ class PushTEnv(gym.Env):
         self.n_contact_points = 0
 
         self.max_score = 50 * 100
-        self.success_threshold = 0.95    # 95% coverage.
+        self.success_threshold = 0.85    # 85% 95% coverage.
 
     def _add_segment(self, a, b, radius):
         shape = pymunk.Segment(self.space.static_body, a, b, radius)

@@ -7,8 +7,8 @@ from draw import DrawOptions
 #@markdown **Goal**: push the gray T-block into the green area.
 #@markdown
 #@markdown Adapted from [Implicit Behavior Cloning](https://implicitbc.github.io/)
-
-
+#@markdown ### **Env Demo**
+#@markdown Standard Gym Env (0.21.0 API)
 
 # env
 class PushTEnv(gym.Env):

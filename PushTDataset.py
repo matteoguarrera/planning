@@ -12,6 +12,8 @@
 # @markdown  - key `action`: shape (pred_horizon, action_dim)
 from imports import *
 
+
+
 def create_sample_indices(
         episode_ends: np.ndarray, sequence_length: int,
         pad_before: int = 0, pad_after: int = 0):
@@ -84,11 +86,23 @@ def unnormalize_data(ndata, stats):
     data = ndata * (stats['max'] - stats['min']) + stats['min']
     return data
 
+# parameters
+pred_horizon = 16
+obs_horizon = 2
+action_horizon = 8
+# |o|o|                             observations: 2
+# | |a|a|a|a|a|a|a|a|               actions executed: 8
+# |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
 
 # dataset
 class PushTStateDataset(torch.utils.data.Dataset):
     def __init__(self, dataset_path,
-                 pred_horizon, obs_horizon, action_horizon):
+                 pred_horizon, obs_horizon, action_horizon, refresh=None):
+
+        self.pred_horizon = pred_horizon
+        self.action_horizon = action_horizon
+        self.obs_horizon = obs_horizon
+
         # read from zarr dataset
         dataset_root = zarr.open(dataset_path, 'r')
         # All demonstration episodes are concatinated in the first dimension N
@@ -98,31 +112,39 @@ class PushTStateDataset(torch.utils.data.Dataset):
             # (N, obs_dim)
             'obs': dataset_root['data']['state'][:]
         }
+        self.train_data = train_data
+
         # Marks one-past the last index for each episode
         episode_ends = dataset_root['meta']['episode_ends'][:]
 
+        self.episode_ends = episode_ends
+
+        if refresh is None:
+            self.__refresh__()
+
+
+    def __refresh__(self):
         # compute start and end of each state-action sequence
         # also handles padding
         indices = create_sample_indices(
-            episode_ends=episode_ends,
-            sequence_length=pred_horizon,
+            episode_ends=self.episode_ends,
+            sequence_length=self.pred_horizon,
             # add padding such that each timestep in the dataset are seen
-            pad_before=obs_horizon - 1,
-            pad_after=action_horizon - 1)
+            pad_before=self.obs_horizon - 1,
+            pad_after=self.action_horizon - 1)
 
         # compute statistics and normalized data to [-1,1]
         stats = dict()
         normalized_train_data = dict()
-        for key, data in train_data.items():
+        for key, data in self.train_data.items():
             stats[key] = get_data_stats(data)
             normalized_train_data[key] = normalize_data(data, stats[key])
 
         self.indices = indices
         self.stats = stats
         self.normalized_train_data = normalized_train_data
-        self.pred_horizon = pred_horizon
-        self.action_horizon = action_horizon
-        self.obs_horizon = obs_horizon
+
+
 
     def __len__(self):
         # all possible segments of the dataset
@@ -146,3 +168,141 @@ class PushTStateDataset(torch.utils.data.Dataset):
         # discard unused observations
         nsample['obs'] = nsample['obs'][:self.obs_horizon, :]
         return nsample
+
+
+####################################################################################
+def load_dataset_push_t():
+    # download demonstration data from Google Drive
+    dataset_path = "pusht_cchi_v7_replay.zarr.zip"
+    if not os.path.isfile(dataset_path):
+        id = "1KY1InLurpMvJDRb14L9NlXT_fEsCvVUq&confirm=t"
+        gdown.download(id=id, output=dataset_path, quiet=False)
+
+    # create dataset from file
+    dataset = PushTStateDataset(
+        dataset_path=dataset_path,
+        pred_horizon=pred_horizon,
+        obs_horizon=obs_horizon,
+        action_horizon=action_horizon
+    )
+    return dataset
+
+def load_dataset_LQR2():
+    dataset = load_dataset_push_t()
+    f = open('datasets/dataset_lqr.pkl', 'rb')
+    synthetic_ours = pickle.load(f)
+    f.close()
+    synthetic_ours['obs'] = synthetic_ours['observations']
+    synthetic_ours['action'] = synthetic_ours['actions']
+    del synthetic_ours['actions'], synthetic_ours['observations']
+    finish = synthetic_ours['finish_token'].astype(np.int8)
+    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1 ])
+    del synthetic_ours['finish_token']
+    dataset.train_data = synthetic_ours
+    dataset.episode_ends = episode_ends
+    dataset.__refresh__()
+    # observation and action dimensions
+
+    obs_dim = 4
+    action_dim = 2
+
+    name = 'LQR2D'
+
+    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name
+
+def load_dataset_LQR2_observation():
+    dataset = load_dataset_push_t()
+    f = open('datasets/dataset_lqr.pkl', 'rb')
+    synthetic_ours = pickle.load(f)
+    f.close()
+    synthetic_ours['obs'] = synthetic_ours['observations']
+    synthetic_ours['action'] = synthetic_ours['observations'][:, (0, 2)] #x, y only, no speed
+    del synthetic_ours['actions'], synthetic_ours['observations']
+    finish = synthetic_ours['finish_token'].astype(np.int8)
+    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
+    del synthetic_ours['finish_token']
+    dataset.train_data = synthetic_ours
+    dataset.episode_ends = episode_ends
+    dataset.__refresh__()
+    # observation and action dimensions
+
+    obs_dim = 4
+    action_dim = 2
+    name = 'LQR2D_obs'
+
+    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name
+
+def load_dataset_LQR3():
+    dataset = load_dataset_push_t()
+    f = open('datasets/3Ddataset_lqr.pkl', 'rb')
+    synthetic_ours = pickle.load(f)
+    f.close()
+    synthetic_ours['obs'] = synthetic_ours['observations']
+    synthetic_ours['action'] = synthetic_ours['actions']
+    del synthetic_ours['actions'], synthetic_ours['observations']
+    finish = synthetic_ours['finish_token'].astype(np.int8)
+    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1 ])
+    del synthetic_ours['finish_token']
+    dataset.train_data = synthetic_ours
+    dataset.episode_ends = episode_ends
+    dataset.__refresh__()
+    # observation and action dimensions
+
+    obs_dim = 6
+    action_dim = 3
+    name = 'LQR3D'
+
+    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name
+
+
+def load_dataset_Drone():
+    dataset = load_dataset_push_t()
+    f = open('datasets/Drone_dataset_lqr.pkl', 'rb')
+    synthetic_ours = pickle.load(f)
+    f.close()
+    finish = synthetic_ours['finish_token'].astype(np.int8)
+    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
+    del synthetic_ours['finish_token']
+    dataset.train_data = synthetic_ours
+    dataset.episode_ends = episode_ends
+    dataset.__refresh__()
+
+    # observation and action dimensions
+    obs_dim = 12
+    action_dim = 4
+    name = 'Drone'
+
+    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name
+
+
+def show_statistics(dataset_paper, dataset_ours):
+    # Stat of trajectories
+    ll1 = []
+    for i in range(len(dataset_paper.episode_ends) - 1):
+        ll1.append(
+            len(dataset_paper.train_data['obs'][dataset_paper.episode_ends[i]:dataset_paper.episode_ends[i + 1]]))
+
+    ll2 = []
+    for i in range(len(dataset_ours.episode_ends) - 1):
+        ll2.append(len(dataset_ours.train_data['obs'][dataset_ours.episode_ends[i]:dataset_ours.episode_ends[i + 1]]))
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 6))
+    ax1.hist(ll1)
+    ax2.hist(ll2)
+    ax1.set_xlabel('Trajectory Length')
+    ax2.set_xlabel('Trajectory Length')
+    ax1.set_title('PushT Dataset')
+    ax2.set_title('Our Synthetic Dataset')
+
