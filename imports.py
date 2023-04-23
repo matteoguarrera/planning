@@ -13,6 +13,8 @@
 # &> /dev/null # mute output
 
 import multiprocessing
+from torch.utils.tensorboard import SummaryWriter
+
 n_cores = multiprocessing.cpu_count()
 # print(n_cores)
 

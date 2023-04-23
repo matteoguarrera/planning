@@ -19,7 +19,8 @@ def dynamics_2D():
                          [0],
                          [0],
                          [0]])
-    return A_mat, B_mat
+    name = 'LQR2D'
+    return A_mat, B_mat, x_target, n_state, n_input, name
 
 def dynamics_3D():
     Ts = 0.05  # discrete simulation time step
@@ -46,8 +47,8 @@ def dynamics_3D():
                          [0],
                          [0],
                          [0]])
-
-    return A_mat, B_mat
+    name = 'LQR3D'
+    return A_mat, B_mat, x_target, n_state, n_input, name
 
 
 def dynamics_Drone():
@@ -98,4 +99,5 @@ def dynamics_Drone():
                          [0],
                          [0],
                          [0]])
-    return A_mat, B_mat
+    name = 'LQRDrone'
+    return A_mat, B_mat, x_target, n_state, n_input, name

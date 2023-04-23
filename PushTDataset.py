@@ -187,7 +187,7 @@ def load_dataset_push_t():
     )
     return dataset
 
-def load_dataset_LQR2():
+def load_dataset_LQR2D():
     dataset = load_dataset_push_t()
     f = open('datasets/dataset_lqr.pkl', 'rb')
     synthetic_ours = pickle.load(f)
@@ -196,30 +196,36 @@ def load_dataset_LQR2():
     synthetic_ours['action'] = synthetic_ours['actions']
     del synthetic_ours['actions'], synthetic_ours['observations']
     finish = synthetic_ours['finish_token'].astype(np.int8)
-    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1 ])
+    episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
     del synthetic_ours['finish_token']
     dataset.train_data = synthetic_ours
     dataset.episode_ends = episode_ends
     dataset.__refresh__()
-    # observation and action dimensions
 
+    # observation and action dimensions
     obs_dim = 4
     action_dim = 2
 
     name = 'LQR2D'
 
-    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    # this depends on how carlo have generated the data
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]])  # x, xdot, y, ydot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3]])
+
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
-def load_dataset_LQR2_observation():
+def load_dataset_LQR2D_observation():
     dataset = load_dataset_push_t()
     f = open('datasets/dataset_lqr.pkl', 'rb')
     synthetic_ours = pickle.load(f)
     f.close()
     synthetic_ours['obs'] = synthetic_ours['observations']
-    synthetic_ours['action'] = synthetic_ours['observations'][:, (0, 2)] #x, y only, no speed
+
+    # x, y only, no speed, translated by one, action is next observation
+    synthetic_ours['action'] = synthetic_ours['observations'][1:, (0, 2)]
     del synthetic_ours['actions'], synthetic_ours['observations']
     finish = synthetic_ours['finish_token'].astype(np.int8)
     episode_ends = np.array([idx for idx, a in enumerate(finish) if a == 1])
@@ -233,12 +239,15 @@ def load_dataset_LQR2_observation():
     action_dim = 2
     name = 'LQR2D_obs'
 
-    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]]) # x, xdot, y, ydot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3]])
+
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
-def load_dataset_LQR3():
+def load_dataset_LQR3D():
     dataset = load_dataset_push_t()
     f = open('datasets/3Ddataset_lqr.pkl', 'rb')
     synthetic_ours = pickle.load(f)
@@ -257,11 +266,13 @@ def load_dataset_LQR3():
     obs_dim = 6
     action_dim = 3
     name = 'LQR3D'
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2], _obs[4]]) # x, xdot, y, ydot, z, zdot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3], _obs[5]]) # x, xdot, y, ydot, z, zdot
 
-    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
 
 def load_dataset_Drone():
@@ -279,12 +290,14 @@ def load_dataset_Drone():
     # observation and action dimensions
     obs_dim = 12
     action_dim = 4
-    name = 'Drone'
+    name = 'LQRDrone'
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[1], _obs[2]]) # x, y, z, xdot, ydot, zdot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[3], _obs[4], _obs[5]]) # x, y, z, xdot, ydot, zdot
 
-    print('[@carlo change] Obs: x, x_dot, y, y_dot')
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
 
 def show_statistics(dataset_paper, dataset_ours):
@@ -298,7 +311,7 @@ def show_statistics(dataset_paper, dataset_ours):
     for i in range(len(dataset_ours.episode_ends) - 1):
         ll2.append(len(dataset_ours.train_data['obs'][dataset_ours.episode_ends[i]:dataset_ours.episode_ends[i + 1]]))
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
     ax1.hist(ll1)
     ax2.hist(ll2)
     ax1.set_xlabel('Trajectory Length')
