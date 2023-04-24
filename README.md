@@ -20,3 +20,7 @@ To do:
      - For this option we are predicting the next position based on a fake model of drone. 
      - We use the 2D dataset and we let the drone follow the waypoint produced by the 8 action taken, 
 and we produce the next 8 observation based on those. Those observations become the waypoint that the drone has to follow.
+ - [ ] Fix dataset generator for drone, and re run experiment for drone only
+   - Reduce the length of gdown decrease the parameters but doesn't increase the speed, same performances
+   - Maybe introduce some plot for dataset generator,
+   - Plot training loss and standard deviation along with hyperparameters.
