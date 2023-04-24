@@ -1,6 +1,8 @@
 logs/
 mavic/trajectories/*
 pusht_demo.ipynb
+datasets/*
+pretrained/*
 
 # Hidden files
 .*

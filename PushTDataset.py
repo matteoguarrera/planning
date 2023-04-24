@@ -173,7 +173,7 @@ class PushTStateDataset(torch.utils.data.Dataset):
 ####################################################################################
 def load_dataset_push_t():
     # download demonstration data from Google Drive
-    dataset_path = "pusht_cchi_v7_replay.zarr.zip"
+    dataset_path = "datasets/pusht_cchi_v7_replay.zarr.zip"
     if not os.path.isfile(dataset_path):
         id = "1KY1InLurpMvJDRb14L9NlXT_fEsCvVUq&confirm=t"
         gdown.download(id=id, output=dataset_path, quiet=False)
