@@ -119,8 +119,7 @@ now = datetime.now()  # current date and time
 date_time = now.strftime("%m_%d_%H_%M_%S")
 
 folder = f'pretrained/{name}_shr{SHRINK}_{date_time}'
-if not os.path.isfile(folder):
-    os.mkdir(folder)
+os.makedirs(folder, exist_ok=True)
 
 writer = SummaryWriter(log_dir=folder) # log tensorboard
 
