@@ -11,7 +11,8 @@ Steps to run the code:
 
 To do:
  - [ ] Make sure we haven't seen inference starting point,
-   - I have already fixed seed for training, so this is just a double check
+   - I have already fixed seed for training, so this is just a double check. Plot the initial sampling starting condition (x,y),and the test set obs_0
+   - np.random.seed() training and inference are disallined
  - [ ] Accuracy measured as number fineshed trajectories within n_step / total trajectories
  - [ ] Comment the load dataset functions
  - [ ] plug the diffusion in the loop
