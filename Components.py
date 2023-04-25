@@ -1,13 +1,13 @@
 #@markdown ### **Network**
 #@markdown
 #@markdown Defines a 1D UNet architecture `ConditionalUnet1D`
-#@markdown as the noies prediction network
+#@markdown as the noise prediction network
 #@markdown
 #@markdown Components
 #@markdown - `SinusoidalPosEmb` Positional encoding for the diffusion iteration k
 #@markdown - `Downsample1d` Strided convolution to reduce temporal resolution
 #@markdown - `Upsample1d` Transposed convolution to increase temporal resolution
-#@markdown - `Conv1dBlock` Conv1d --> GroupNorm --> Mish
+#@markdown - `Conv1dBlock` Conv1d --> GroupNorm --> SiLU
 #@markdown - `ConditionalResidualBlock1D` Takes two inputs `x` and `cond`. \
 #@markdown `x` is passed through 2 `Conv1dBlock` stacked together with residual connection.
 #@markdown `cond` is applied to `x` with [FiLM](https://arxiv.org/abs/1709.07871) conditioning.
@@ -49,7 +49,7 @@ class Upsample1d(nn.Module):
 
 class Conv1dBlock(nn.Module):
     '''
-        Conv1d --> GroupNorm --> Mish
+        Conv1d --> GroupNorm --> SiLU
     '''
 
     def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
@@ -58,7 +58,7 @@ class Conv1dBlock(nn.Module):
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
             nn.GroupNorm(n_groups, out_channels),
-            nn.Mish(),
+            nn.SiLU(),
         )
 
     def forward(self, x):
@@ -84,7 +84,7 @@ class ConditionalResidualBlock1D(nn.Module):
         cond_channels = out_channels * 2
         self.out_channels = out_channels
         self.cond_encoder = nn.Sequential(
-            nn.Mish(),
+            nn.SiLU(),
             nn.Linear(cond_dim, cond_channels),
             nn.Unflatten(-1, (-1, 1))
         )
@@ -143,7 +143,7 @@ class ConditionalUnet1D(nn.Module):
         diffusion_step_encoder = nn.Sequential(
             SinusoidalPosEmb(dsed),
             nn.Linear(dsed, dsed * 4),
-            nn.Mish(),
+            nn.SiLU(),
             nn.Linear(dsed * 4, dsed),
         )
         cond_dim = dsed + global_cond_dim
