@@ -10,8 +10,19 @@
 # @markdown  - Pads the beginning and the end of each episode with repetition
 # @markdown  - key `obs`: shape (obs_horizon, obs_dim)
 # @markdown  - key `action`: shape (pred_horizon, action_dim)
-from imports import *
 
+from utils.imports import *
+from utils.dataset_generator import generate_dataset
+
+# parameters
+pred_horizon = 16
+obs_horizon = 2
+action_horizon = 8
+
+
+# |o|o|                             observations: 2
+# | |a|a|a|a|a|a|a|a|               actions executed: 8
+# |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
 
 
 def create_sample_indices(
@@ -74,7 +85,7 @@ def get_data_stats(data):
 
 
 def normalize_data(data, stats):
-    # nomalize to [0,1]
+    # normalize to [0,1]
     ndata = (data - stats['min']) / (stats['max'] - stats['min'])
     # normalize to [-1, 1]
     ndata = ndata * 2 - 1
@@ -86,13 +97,6 @@ def unnormalize_data(ndata, stats):
     data = ndata * (stats['max'] - stats['min']) + stats['min']
     return data
 
-# parameters
-pred_horizon = 16
-obs_horizon = 2
-action_horizon = 8
-# |o|o|                             observations: 2
-# | |a|a|a|a|a|a|a|a|               actions executed: 8
-# |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
 
 # dataset
 class PushTStateDataset(torch.utils.data.Dataset):
@@ -122,7 +126,6 @@ class PushTStateDataset(torch.utils.data.Dataset):
         if refresh is None:
             self.__refresh__()
 
-
     def __refresh__(self):
         # compute start and end of each state-action sequence
         # also handles padding
@@ -143,8 +146,6 @@ class PushTStateDataset(torch.utils.data.Dataset):
         self.indices = indices
         self.stats = stats
         self.normalized_train_data = normalized_train_data
-
-
 
     def __len__(self):
         # all possible segments of the dataset
@@ -171,7 +172,8 @@ class PushTStateDataset(torch.utils.data.Dataset):
 
 
 ####################################################################################
-def load_dataset_push_t():
+
+def __load_dataset_push_t__():
     # download demonstration data from Google Drive
     dataset_path = "datasets/pusht_cchi_v7_replay.zarr.zip"
     if not os.path.isfile(dataset_path):
@@ -188,9 +190,34 @@ def load_dataset_push_t():
     return dataset
 
 
-def __load__(name):
-    dataset = load_dataset_push_t()
-    f = open(f'datasets/dataset_{name}.pkl', 'rb')
+def load_dataset(system_name):
+    print(f'[Dataset] Loading Dataset {system_name} from memory')
+    if system_name == '2d':
+        fn_dataset = __load_dataset_lqr2d__
+
+    elif system_name == '3d':
+        fn_dataset = __load_dataset_lqr3d__
+
+    elif system_name == 'drone':
+        fn_dataset = __load_dataset_drone__
+
+    else:
+        raise f'Dataset {system_name} not known'
+
+    dataset, obs_dim, action_dim, name, fn_distance, fn_speed = fn_dataset()
+
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+
+
+""" Our dataset are build on top or PushTDataset class"""
+
+
+def __load__(system_name):
+    dataset = __load_dataset_push_t__()
+    if not os.path.isfile(f'datasets/dataset_{system_name}.pkl'):
+        generate_dataset(system_name=system_name)
+
+    f = open(f'datasets/dataset_{system_name}.pkl', 'rb')
     synthetic_ours = pickle.load(f)
     f.close()
 
@@ -204,13 +231,12 @@ def __load__(name):
     return dataset
 
 
-def load_dataset_lqr2d():
-    name = 'LQR2D'
+def __load_dataset_lqr2d__():
+    name = '2d'
     dataset = __load__(name)
 
     # observation and action dimensions
-    obs_dim = 4
-    action_dim = 2
+    obs_dim, action_dim = 4, 2
 
     # this depends on how carlo have generated the data
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]])  # x, xdot, y, ydot
@@ -222,8 +248,42 @@ def load_dataset_lqr2d():
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
 
+def __load_dataset_lqr3d__():
+    name = '3d'
+    dataset = __load__(name)
+    # observation and action dimensions
+
+    obs_dim = 6
+    action_dim = 3
+
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2], _obs[4]])  # x, xdot, y, ydot, z, zdot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3], _obs[5]])  # x, xdot, y, ydot, z, zdot
+
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+
+
+def __load_dataset_drone__():
+    name = 'drone'
+    dataset = __load__(name)
+
+    # observation and action dimensions
+    obs_dim = 12
+    action_dim = 4
+
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[1], _obs[2]])  # x, y, z, xdot, ydot, zdot
+    fn_speed = lambda _obs: np.linalg.norm([_obs[3], _obs[4], _obs[5]])  # x, y, z, xdot, ydot, zdot
+
+    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
+    print('[@carlo change] Action: x_acc, y_ acc (?)')
+    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
+    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+
+
 def load_dataset_lqr2d_observation():
-    dataset = load_dataset_push_t()
+    dataset = __load_dataset_push_t__()
     f = open('datasets/dataset_lqr.pkl', 'rb')
     synthetic_ours = pickle.load(f)
     f.close()
@@ -244,7 +304,7 @@ def load_dataset_lqr2d_observation():
     action_dim = 2
     name = 'LQR2D_obs'
 
-    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]]) # x, xdot, y, ydot
+    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]])  # x, xdot, y, ydot
     fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3]])
 
     print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
@@ -253,41 +313,9 @@ def load_dataset_lqr2d_observation():
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
 
-def load_dataset_lqr3d():
-    name = 'LQR3D'
-    dataset = __load__(name)
-    # observation and action dimensions
+def show_statistics(dataset_ours):
+    dataset_paper = __load_dataset_push_t__()
 
-    obs_dim = 6
-    action_dim = 3
-
-    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2], _obs[4]]) # x, xdot, y, ydot, z, zdot
-    fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3], _obs[5]]) # x, xdot, y, ydot, z, zdot
-
-    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
-    print('[@carlo change] Action: x_acc, y_ acc (?)')
-    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
-
-
-def load_dataset_drone():
-    name = 'LQRDrone'
-    dataset = __load__(name)
-
-    # observation and action dimensions
-    obs_dim = 12
-    action_dim = 4
-
-    fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[1], _obs[2]]) # x, y, z, xdot, ydot, zdot
-    fn_speed = lambda _obs: np.linalg.norm([_obs[3], _obs[4], _obs[5]]) # x, y, z, xdot, ydot, zdot
-
-    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
-    print('[@carlo change] Action: x_acc, y_ acc (?)')
-    print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
-
-
-def show_statistics(dataset_paper, dataset_ours):
     # Stat of trajectories
     ll1 = []
     for i in range(len(dataset_paper.episode_ends) - 1):
@@ -305,4 +333,3 @@ def show_statistics(dataset_paper, dataset_ours):
     ax2.set_xlabel('Trajectory Length')
     ax1.set_title('PushT Dataset')
     ax2.set_title('Our Synthetic Dataset')
-

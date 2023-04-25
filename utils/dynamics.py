@@ -1,7 +1,24 @@
 import numpy as np
 
 
-def dynamics_2d():
+def import_dynamics(system_name: str):
+    if system_name == '2d':
+        fn_dynamics = __dynamics_2d__
+
+    elif system_name == '3d':
+        fn_dynamics = __dynamics_3d__
+
+    elif system_name == 'drone':
+        fn_dynamics = __dynamics_drone__
+
+    else:
+        raise f'Dynamic system {system_name} not known'
+
+    A_mat, B_mat, x_target, n_state, n_input, name = fn_dynamics()
+    return A_mat, B_mat, x_target, n_state, n_input, name
+
+
+def __dynamics_2d__():
     """ Dynamical system point in 2D """
     Ts = 0.05  # discrete simulation time step
 
@@ -21,11 +38,11 @@ def dynamics_2d():
                          [0],
                          [0],
                          [0]])
-    name = 'LQR2D'
+    name = '2d'
     return A_mat, B_mat, x_target, n_state, n_input, name
 
 
-def dynamics_3d():
+def __dynamics_3d__():
     """ Dynamical system point in 3D """
     Ts = 0.05  # discrete simulation time step
 
@@ -51,11 +68,11 @@ def dynamics_3d():
                          [0],
                          [0],
                          [0]])
-    name = 'LQR3D'
+    name = '3d'
     return A_mat, B_mat, x_target, n_state, n_input, name
 
 
-def dynamics_drone():
+def __dynamics_drone__():
     """ Dynamical system linearized drone """
     Ts = 0.05  # discrete simulation time step
 
@@ -104,5 +121,5 @@ def dynamics_drone():
                          [0],
                          [0],
                          [0]])
-    name = 'LQRDrone'
+    name = 'drone'
     return A_mat, B_mat, x_target, n_state, n_input, name
