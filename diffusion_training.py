@@ -207,4 +207,12 @@ def train_loop(dataloader,
 
 
 if __name__ == "__main__":
-    diffusion_training()
+    shrink = 1  # how much small the network wrt papers
+    down_dims = [256 // shrink, 512 // shrink, 1024 // shrink]
+
+    training(system_name='3d',
+             diffusion_step_embed_dim=256,
+             kernel_size=5,
+             down_dims=down_dims,
+             num_epochs=100,
+             num_diffusion_iters=50)

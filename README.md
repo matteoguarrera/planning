@@ -20,15 +20,15 @@ This repository contains the code for our project on diffusion models for drone 
 ```
 
 ### Execution steps
-**1. Download the dataset and the pretrained model from the v0.0.0 release**
-
-Run all the cells from the `DatasetGenerator` notebook or make sure to download the dataset and put it in the 
-`datasets` folder
-You can specify there what datasets you want to generate.
+**1. Download the pretrained models from the v0.0.0 release**
 
 **2. Launch training**
+Run
+```bash
+  >> python diffusion_training.py
+```
+if you have the computational power. We suggest to use the pretrained model and just do inference.
 
-Run the `DiffusionTraining` notebook, if you have the computational power. We suggest to use the pretrained model and just do inference.
 If you are using a M1 Mac, please execute the jupyter notebook with the following command to enable MPS:
 ```
 PYTORCH_ENABLE_MPS_FALLBACK=1 jupyter notebook
