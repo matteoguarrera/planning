@@ -11,8 +11,6 @@
 This repository contains the code for our project on diffusion models for drone motion planning.
 
 ## Usage
-- [ ] Do we need to setup the environment?
-- [ ] Do we install requirements?
 
 ### Execution steps
 **1. Download the database**
@@ -31,6 +29,8 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 jupyter notebook
 **3. Inference**
 
 ## Etc.
+- [ ] Do we need to setup the environment?
+- [ ] Do we install requirements?
 To do:
  - [ ] Make sure we haven't seen inference starting point,
    - I have already fixed seed for training, so this is just a double check. Plot the initial sampling starting condition (x,y),and the test set obs_0
