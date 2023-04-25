@@ -13,22 +13,30 @@ This repository contains the code for our project on diffusion models for drone 
 ## Usage
 - [ ] Do we need to setup the environment?
 - [ ] Do we install requirements?
+```bash
+>> pip3 uninstall cvxpy -y > /dev/null
+>> pip3 install setuptools==65.5.0 > /dev/null
+>> pip3 install torch==1.13.1 torchvision==0.14.1 diffusers==0.11.1 zarr==2.12.0 numcodecs==0.10.2
+```
 
 ### Execution steps
-**1. Download the database**
+**1. Download the dataset and the pretrained model from the v0.0.0 release**
 
-Run all the cells from the `DatasetGenerator` notebook.
+Run all the cells from the `DatasetGenerator` notebook or make sure to download the dataset and put it in the 
+`datasets` folder
 You can specify there what datasets you want to generate.
 
 **2. Launch training**
 
-Run the `DiffusionTraining` notebook.
+Run the `DiffusionTraining` notebook, if you have the computational power. We suggest to use the pretrained model and just do inference.
 If you are using a M1 Mac, please execute the jupyter notebook with the following command to enable MPS:
 ```
 PYTORCH_ENABLE_MPS_FALLBACK=1 jupyter notebook
 ```
 
 **3. Inference**
+Run the `DiffusionInference` notebook and visualize one trajectory. 
+
 
 ## Etc.
 To do:
