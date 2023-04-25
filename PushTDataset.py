@@ -108,9 +108,9 @@ class PushTStateDataset(torch.utils.data.Dataset):
         # All demonstration episodes are concatinated in the first dimension N
         train_data = {
             # (N, action_dim)
-            'action': dataset_root['data']['action'][:].astype(np.float32),
+            'action': dataset_root['data']['action'][:],
             # (N, obs_dim)
-            'obs': dataset_root['data']['state'][:].astype(np.float32)
+            'obs': dataset_root['data']['state'][:]
         }
         self.train_data = train_data
 
