@@ -41,6 +41,9 @@ Run the `DiffusionInference` notebook and visualize one trajectory.
 
 For the simulator installation please follow [this link.](https://cyberbotics.com/doc/guide/installation-procedure)
 
+## Usage
+- [ ] Do we need to setup the environment?
+- [ ] Do we install requirements?
 
 ## Etc.
 To do:
