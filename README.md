@@ -1,14 +1,30 @@
-# planning
-Diffusion Planning CS 282
+# Final project CS282A: Diffusion Planning
+[![GitHub stars](https://img.shields.io/github/stars/matteoguarrera/planning.svg)](https://GitHub.com/matteoguarrera/planning/stargazers/)  [![GitHub forks](https://img.shields.io/github/forks/matteoguarrera/planning.svg)](https://GitHub.com/matteoguarrera/planning/network/)  [![GitHub repo size in bytes](https://img.shields.io/github/repo-size/matteoguarrera/planning.svg)](https://github.com/matteoguarrera/planning) [![GitHub license](https://img.shields.io/github/license/matteoguarrera/planning.svg)](https://github.com/matteoguarrera/planning/blob/master/LICENSE)
 
+**Authors**: Carlo Bosio<sup>1</sup>, Karim Elmaaroufi<sup>2</sup>, Margarita Geleta<sup>2</sup>, Matteo Guarrera<sup>2</sup>
 
-Steps to run the code:
+<sup>1</sup> *UC Berkeley, Department of Mechanical Engineering*
 
-    1. run DatasetGenerator notebook
-    1. run DiffusionTraining notebook
+<sup>2</sup> *UC Berkeley, Department of Electrical Engineering and Computer Science*
 
+## Description
+This repository contains the code for our project on diffusion models for drone motion planning.
 
+## Usage
+- [ ] Do we need to setup the environment?
+- [ ] Do we install requirements?
 
+### Execution steps
+**1. Download the database**
+Run all the cells from the `DatasetGenerator` notebook.
+You can specify there what datasets you want to generate.
+
+**2. Launch training**
+Run the `DiffusionTraining` notebook.
+
+**3. Inference**
+
+## Etc.
 To do:
  - [ ] Make sure we haven't seen inference starting point,
    - I have already fixed seed for training, so this is just a double check
