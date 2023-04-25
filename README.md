@@ -46,6 +46,8 @@ For the simulator installation please follow [this link.](https://cyberbotics.co
 - [ ] Do we install requirements?
 
 ## Etc.
+- [ ] Do we need to setup the environment?
+- [ ] Do we install requirements?
 To do:
  - [ ] Make sure we haven't seen inference starting point,
    - I have already fixed seed for training, so this is just a double check. Plot the initial sampling starting condition (x,y),and the test set obs_0
