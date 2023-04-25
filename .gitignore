@@ -3,7 +3,7 @@ mavic/trajectories/*
 pusht_demo.ipynb
 datasets/*
 pretrained/*
-
+pretrained_old
 # Hidden files
 .*
 
