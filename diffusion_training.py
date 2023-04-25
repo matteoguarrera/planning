@@ -1,7 +1,7 @@
 from utils.imports import *
 from utils.Dataset import load_dataset, show_statistics
 from utils.Components import ConditionalUnet1D
-
+import argparse
 
 def training(system_name='2d',
              diffusion_step_embed_dim=256,
@@ -207,6 +207,19 @@ def train_loop(dataloader,
 
 
 if __name__ == "__main__":
+    # parser = argparse.ArgumentParser(description='')
+    #
+    # parser.add_argument('filename')  # positional argument
+    # parser.add_argument('--system_name', default='3d')
+    # parser.add_argument('--diffusion_step_embed_dim', default=256)
+
+
+    # parser.add_argument('--system_name')  # option that takes a value
+
+    # parser.add_argument('-v', '--verbose',
+    #                     action='store_true')  # on/off flag
+    # args = parser.parse_args()
+    # print(args.filename, args.count, args.verbose)
     shrink = 1  # how much small the network wrt papers
     down_dims = [256 // shrink, 512 // shrink, 1024 // shrink]
 
