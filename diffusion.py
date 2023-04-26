@@ -8,11 +8,11 @@ from utils.dynamics import import_dynamics
 from utils.Dataset import normalize_data, unnormalize_data, load_dataset
 
 
-def testing(ckpt_path):
+def testing(ckpt_path, max_steps= 400, n_sim= 100):
+    # limit enviornment interaction to 200 steps before termination
+
     result = parse('pretrained/{}_arch{}_e{}_d{}_edim{}_ks{}_par{}_date{}', ckpt_path)
 
-    print(ckpt_path)
-    print(result)
     system_name, arch, num_epochs, num_diffusion_iters, diffusion_step_embed_dim, kernel_size, num_param, date_time = result
     num_epochs = int(num_epochs)
     num_diffusion_iters = int(num_diffusion_iters)
@@ -63,9 +63,6 @@ def testing(ckpt_path):
     print('Pretrained weights loaded.')
 
     #####################################################################################
-    # limit enviornment interaction to 200 steps before termination
-    max_steps = 400
-    n_sim = 100
 
     ended_correctly = 0
     REWARD = np.zeros((n_sim, 4))
