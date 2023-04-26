@@ -25,7 +25,7 @@ This repository contains the code for our project on diffusion models for drone 
 **2. Launch training**
 Run
 ```bash
-  >> python diffusion_training.py
+  >> python diffusion.py
 ```
 if you have the computational power. We suggest to use the pretrained model and just do inference.
 

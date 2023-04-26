@@ -3,15 +3,18 @@ from utils.Dataset import load_dataset, show_statistics
 from utils.Components import ConditionalUnet1D
 import argparse
 
+
 def training(system_name='2d',
              diffusion_step_embed_dim=256,
              kernel_size=5,
              down_dims=[256, 512, 1024],
              num_epochs=100,
              num_diffusion_iters=100):
+
     # Import synthetic dataset
-    dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed = load_dataset(
-        system_name=system_name)  # system can be '2d', '3d', 'drone'
+    # system_name can be '2d', '3d', 'drone'
+    dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed = load_dataset(system_name=system_name)
+
     # dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed  = load_dataset_lqr2d_observation() # to clean,  @carlo
 
     # Show distribution of trajectories length
@@ -90,8 +93,8 @@ def training(system_name='2d',
     date_time = now.strftime("%m_%d_%H_%M_%S")
     num_param = f'{noise_pred_net.num_params:.2e}'.replace('+', '').replace('.', '_')
 
-    folder = f'pretrained/{system_name}_arch{arch}_{num_epochs}_edim{diffusion_step_embed_dim}' \
-             f'_ks{kernel_size}_par{num_param}_{date_time}'
+    folder = f'pretrained/{system_name}_arch{arch}_e{num_epochs}_edim{diffusion_step_embed_dim}' \
+             f'_ks{kernel_size}_par{num_param}_date{date_time}'
 
     train_loop(dataloader,
                noise_pred_net, ema, optimizer, lr_scheduler, noise_scheduler,
@@ -109,6 +112,7 @@ def train_loop(dataloader,
                device,
                system_name,
                folder):
+    print(folder)
     os.makedirs(folder, exist_ok=True)
 
     obs_horizon = dataloader.dataset.obs_horizon
@@ -221,9 +225,9 @@ if __name__ == "__main__":
     # args = parser.parse_args()
     # print(args.filename, args.count, args.verbose)
     shrink = 1  # how much small the network wrt papers
-    down_dims = [256 // shrink, 512 // shrink, 1024 // shrink]
+    down_dims = [1024 // shrink] #256 // shrink, 512 // shrink,
 
-    training(system_name='3d',
+    training(system_name='2d',
              diffusion_step_embed_dim=256,
              kernel_size=5,
              down_dims=down_dims,
