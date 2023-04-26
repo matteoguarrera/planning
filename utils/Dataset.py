@@ -192,7 +192,7 @@ def __load_dataset_push_t__():
     return dataset
 
 
-def load_dataset(system_name):
+def load_dataset(system_name: str):
     print(f'[Dataset] Loading Dataset {system_name} from memory')
     if system_name == '2d':
         fn_dataset = __load_dataset_lqr2d__
