@@ -15,7 +15,7 @@ def inference(obs, obs_horizon, max_steps,
               action_dim, num_diffusion_iters, noise_scheduler,
               ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance):
 
-    torch.random.seed(0) # try to make diffusion model predictable
+    torch.manual_seed(0) # try to make diffusion model predictable
     OBS = []
     ACTION_PRED = []
     ############ obs
@@ -110,15 +110,17 @@ def inference(obs, obs_horizon, max_steps,
                 if done:
                     # ended_correctly += 1
                     # REWARD[n_sim_idx, :] = \
-                    return True, reward, speed, max(rewards), step_idx
+                    return (True, reward, speed, max(rewards), step_idx), (OBS, ACTION_PRED)
 
                 # update progress bar
                 step_idx += 1
                 pbar.update(1)
                 pbar.set_postfix(reward=reward)
                 pbar.set_postfix(max_reward=max(rewards))
+
                 if step_idx > max_steps:
-                    return False, reward, speed, max(rewards), step_idx
+                    # too many steps
+                    return (False, reward, speed, max(rewards), step_idx), (OBS, ACTION_PRED)
 
                 # if done:
                 #     break
@@ -178,7 +180,7 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     print('Pretrained weights loaded.')
 
     #####################################################################################
-
+    TRAJECTORIES = []
     ended_correctly = 0
     REWARD = np.zeros((n_sim, 5))
     for n_sim_idx in range(n_sim):
@@ -203,11 +205,11 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
         # if obs_dim > 8:
         #     obs[3:] = 0 # 9, 10, 11,
 
-        REWARD[n_sim_idx, :] = inference(obs, obs_horizon, max_steps,
-                                         stats, device, pred_horizon, action_horizon,
-                                         action_dim, num_diffusion_iters, noise_scheduler,
-                                         ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance)
-
+        REWARD[n_sim_idx, :], trajectory = inference(obs, obs_horizon, max_steps,
+                                                     stats, device, pred_horizon, action_horizon,
+                                                     action_dim, num_diffusion_iters, noise_scheduler,
+                                                     ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance)
+        TRAJECTORIES.append(trajectory)
         # print out the maximum target coverage
         # print('Score: ', max(rewards))
 
@@ -216,7 +218,7 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     # vwrite('vis.mp4', imgs)
     # Video('vis.mp4', embed=True, width=256, height=256)
 
-    return REWARD, np.sum(REWARD[:, 0])
+    return REWARD, TRAJECTORIES, np.sum(REWARD[:, 0])
 
 
 def training(system_name='2d',
