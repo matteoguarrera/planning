@@ -37,6 +37,10 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 jupyter notebook
 **3. Inference**
 Run the `DiffusionInference` notebook and visualize one trajectory. 
 
+## Simulator
+
+For the simulator installation please follow [this link.](https://cyberbotics.com/doc/guide/installation-procedure)
+
 
 ## Etc.
 To do:
