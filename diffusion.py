@@ -1,3 +1,5 @@
+import torch.random
+
 from utils.imports import *
 from utils.Dataset import load_dataset, show_statistics
 from utils.Components import ConditionalUnet1D
@@ -8,13 +10,126 @@ from utils.dynamics import import_dynamics
 from utils.Dataset import normalize_data, unnormalize_data, load_dataset
 
 
-def testing(ckpt_path, max_steps= 400, n_sim= 100):
+def inference(obs, obs_horizon, max_steps,
+              stats, device, pred_horizon, action_horizon,
+              action_dim, num_diffusion_iters, noise_scheduler,
+              ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance):
+
+    torch.random.seed(0) # try to make diffusion model predictable
+    OBS = []
+    ACTION_PRED = []
+    ############ obs
+    # keep a queue of last 2 steps of observations
+    obs_deque = collections.deque(
+        [obs] * obs_horizon, maxlen=obs_horizon)
+    # save visualization and rewards
+    # imgs = [env.render(mode='rgb_array')]
+    rewards = list()
+    done = False
+    step_idx = 0
+    with tqdm(total=max_steps, desc="Eval", leave=False) as pbar:
+        while not done:
+            B = 1
+            # stack the last obs_horizon (2) number of observations
+            obs_seq = np.stack(obs_deque)
+            # normalize observation
+            nobs = normalize_data(obs_seq, stats=stats['obs'])
+            # device transfer
+            nobs = torch.from_numpy(nobs).to(device, dtype=torch.float32)
+
+            # infer action
+            with torch.no_grad():
+                # reshape observation to (B,obs_horizon*obs_dim)
+                obs_cond = nobs.unsqueeze(0).flatten(start_dim=1)
+
+                # initialize action from Gaussian noise
+                noisy_action = torch.randn(
+                    (B, pred_horizon, action_dim), device=device)
+                naction = noisy_action
+
+                # init scheduler
+                noise_scheduler.set_timesteps(num_diffusion_iters)
+
+                for k in noise_scheduler.timesteps:
+                    # predict noise
+                    noise_pred = ema_noise_pred_net(
+                        sample=naction,
+                        timestep=k,
+                        global_cond=obs_cond
+                    )
+
+                    # inverse diffusion step (remove noise)
+                    naction = noise_scheduler.step(
+                        model_output=noise_pred,
+                        timestep=k,
+                        sample=naction
+                    ).prev_sample
+
+            # unnormalize action
+            naction = naction.detach().to('cpu').numpy()
+
+            # print('naction: ', action_pred.shape)
+            # (B, pred_horizon, action_dim)
+            naction = naction[0]
+            action_pred = unnormalize_data(naction, stats=stats['action'])
+
+            # print('action_pred: ', action_pred.shape)
+
+            # only take action_horizon number of actions
+            start = obs_horizon - 1  # obs horizon is 2
+            end = start + action_horizon
+            action = action_pred[start:end, :]
+            # (action_horizon, action_dim)
+            # print('action_pred: ', action.shape)
+
+            # execute action_horizon number of steps
+            # without replanning
+            for i in range(len(action)):
+
+                OBS.append(obs)
+                ACTION_PRED.append(action)
+
+                # stepping env
+                # obs, reward, done, info = env.step(action[i])
+                obs = A_mat @ obs + B_mat @ action[i]
+
+                dist = fn_distance(obs)  # how far are we
+                speed = fn_speed(obs)
+
+                rew_enable = dist < 1
+                reward = rew_enable * (1 - dist)
+
+                done = reward > 0.95 and speed < 0.1
+
+                obs_deque.append(obs)
+
+                # and reward/vis
+                rewards.append(reward)
+                # imgs.append(env.render(mode='rgb_array'))
+
+                if done:
+                    # ended_correctly += 1
+                    # REWARD[n_sim_idx, :] = \
+                    return True, reward, speed, max(rewards), step_idx
+
+                # update progress bar
+                step_idx += 1
+                pbar.update(1)
+                pbar.set_postfix(reward=reward)
+                pbar.set_postfix(max_reward=max(rewards))
+                if step_idx > max_steps:
+                    return False, reward, speed, max(rewards), step_idx
+
+                # if done:
+                #     break
+
+
+def testing(ckpt_path, max_steps=400, n_sim=100):
     # limit enviornment interaction to 200 steps before termination
 
     result = parse('pretrained/{}_arch{}_e{}_d{}_edim{}_ks{}_par{}_date{}', ckpt_path)
-
-    system_name, arch, num_epochs, num_diffusion_iters, diffusion_step_embed_dim, kernel_size, num_param, date_time = result
-    num_epochs = int(num_epochs)
+    # system_name, arch, num_epochs, num_diffusion_iters, diffusion_step_embed_dim, kernel_size, num_param, date_time
+    system_name, arch, _, num_diffusion_iters, diffusion_step_embed_dim, kernel_size, _, _ = result
     num_diffusion_iters = int(num_diffusion_iters)
     diffusion_step_embed_dim = int(diffusion_step_embed_dim)
     kernel_size = int(kernel_size)
@@ -65,10 +180,10 @@ def testing(ckpt_path, max_steps= 400, n_sim= 100):
     #####################################################################################
 
     ended_correctly = 0
-    REWARD = np.zeros((n_sim, 4))
-
+    REWARD = np.zeros((n_sim, 5))
     for n_sim_idx in range(n_sim):
-        print(n_sim_idx, end=' ')
+
+        # print(n_sim_idx, end=' ')
         np.random.seed(n_sim_idx + 10000)  # seed was between 0 and 500 in the training set
 
         obs = np.random.uniform(low=-5.0, high=5.0, size=(n_state))
@@ -88,120 +203,20 @@ def testing(ckpt_path, max_steps= 400, n_sim= 100):
         # if obs_dim > 8:
         #     obs[3:] = 0 # 9, 10, 11,
 
-        OBS = []
-        ACTION_PRED = []
-        ############ obs
-        # keep a queue of last 2 steps of observations
-        obs_deque = collections.deque(
-            [obs] * obs_horizon, maxlen=obs_horizon)
-        # save visualization and rewards
-        # imgs = [env.render(mode='rgb_array')]
-        rewards = list()
-        done = False
-        step_idx = 0
-        with tqdm(total=max_steps, desc="Eval", leave=False) as pbar:
-            while not done:
-                B = 1
-                # stack the last obs_horizon (2) number of observations
-                obs_seq = np.stack(obs_deque)
-                # normalize observation
-                nobs = normalize_data(obs_seq, stats=stats['obs'])
-                # device transfer
-                nobs = torch.from_numpy(nobs).to(device, dtype=torch.float32)
-
-                # infer action
-                with torch.no_grad():
-                    # reshape observation to (B,obs_horizon*obs_dim)
-                    obs_cond = nobs.unsqueeze(0).flatten(start_dim=1)
-
-                    # initialize action from Gaussian noise
-                    noisy_action = torch.randn(
-                        (B, pred_horizon, action_dim), device=device)
-                    naction = noisy_action
-
-                    # init scheduler
-                    noise_scheduler.set_timesteps(num_diffusion_iters)
-
-                    for k in noise_scheduler.timesteps:
-                        # predict noise
-                        noise_pred = ema_noise_pred_net(
-                            sample=naction,
-                            timestep=k,
-                            global_cond=obs_cond
-                        )
-
-                        # inverse diffusion step (remove noise)
-                        naction = noise_scheduler.step(
-                            model_output=noise_pred,
-                            timestep=k,
-                            sample=naction
-                        ).prev_sample
-
-                # unnormalize action
-                naction = naction.detach().to('cpu').numpy()
-
-                # print('naction: ', action_pred.shape)
-                # (B, pred_horizon, action_dim)
-                naction = naction[0]
-                action_pred = unnormalize_data(naction, stats=stats['action'])
-
-                # print('action_pred: ', action_pred.shape)
-
-                # only take action_horizon number of actions
-                start = obs_horizon - 1  # obs horizon is 2
-                end = start + action_horizon
-                action = action_pred[start:end, :]
-                # (action_horizon, action_dim)
-                # print('action_pred: ', action.shape)
-
-                # execute action_horizon number of steps
-                # without replanning
-                for i in range(len(action)):
-
-                    OBS.append(obs)
-                    ACTION_PRED.append(action)
-
-                    # stepping env
-                    # obs, reward, done, info = env.step(action[i])
-                    obs = A_mat @ obs + B_mat @ action[i]
-
-                    dist = fn_distance(obs)  # how far are we
-                    speed = fn_speed(obs)
-
-                    rew_enable = dist < 1
-                    reward = rew_enable * (1 - dist)
-
-                    done = reward > 0.95 and speed < 0.1
-
-                    obs_deque.append(obs)
-
-                    # and reward/vis
-                    rewards.append(reward)
-                    # imgs.append(env.render(mode='rgb_array'))
-
-                    if done:
-                        ended_correctly += 1
-                        REWARD[n_sim_idx, :] = reward, speed, max(rewards), step_idx
-
-                    # update progress bar
-                    step_idx += 1
-                    pbar.update(1)
-                    pbar.set_postfix(reward=reward)
-                    if step_idx > max_steps:
-                        done = True
-
-                    if done:
-                        break
+        REWARD[n_sim_idx, :] = inference(obs, obs_horizon, max_steps,
+                                         stats, device, pred_horizon, action_horizon,
+                                         action_dim, num_diffusion_iters, noise_scheduler,
+                                         ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance)
 
         # print out the maximum target coverage
-        print('Score: ', max(rewards))
+        # print('Score: ', max(rewards))
 
-        # visualize
-        # from IPython.display import Video
-        # vwrite('vis.mp4', imgs)
-        # Video('vis.mp4', embed=True, width=256, height=256)
+    # visualize
+    # from IPython.display import Video
+    # vwrite('vis.mp4', imgs)
+    # Video('vis.mp4', embed=True, width=256, height=256)
 
-        return REWARD
+    return REWARD, np.sum(REWARD[:, 0])
 
 
 def training(system_name='2d',
@@ -210,7 +225,6 @@ def training(system_name='2d',
              down_dims=[256, 512, 1024],
              num_epochs=100,
              num_diffusion_iters=100):
-
     # Import synthetic dataset
     # system_name can be '2d', '3d', 'drone'
     dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed = load_dataset(system_name=system_name)
@@ -417,7 +431,6 @@ if __name__ == "__main__":
     # parser.add_argument('--system_name', default='3d')
     # parser.add_argument('--diffusion_step_embed_dim', default=256)
 
-
     # parser.add_argument('--system_name')  # option that takes a value
 
     # parser.add_argument('-v', '--verbose',
@@ -429,7 +442,7 @@ if __name__ == "__main__":
     testing(ckpt_path)
 
     shrink = 1  # how much small the network wrt papers
-    down_dims = [1024 // shrink] #256 // shrink, 512 // shrink,
+    down_dims = [1024 // shrink]  # 256 // shrink, 512 // shrink,
 
     training(system_name='2d',
              diffusion_step_embed_dim=256,
