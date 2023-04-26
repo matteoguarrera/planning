@@ -93,7 +93,7 @@ def training(system_name='2d',
     date_time = now.strftime("%m_%d_%H_%M_%S")
     num_param = f'{noise_pred_net.num_params:.2e}'.replace('+', '').replace('.', '_')
 
-    folder = f'pretrained/{system_name}_arch{arch}_e{num_epochs}_edim{diffusion_step_embed_dim}' \
+    folder = f'pretrained/{system_name}_arch{arch}_e{num_epochs}_d{num_diffusion_iters}_edim{diffusion_step_embed_dim}' \
              f'_ks{kernel_size}_par{num_param}_date{date_time}'
 
     train_loop(dataloader,
