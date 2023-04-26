@@ -3,6 +3,209 @@ from utils.Dataset import load_dataset, show_statistics
 from utils.Components import ConditionalUnet1D
 import argparse
 
+from parse import *
+from utils.dynamics import import_dynamics
+from utils.Dataset import normalize_data, unnormalize_data, load_dataset
+
+
+def testing(ckpt_path):
+    result = parse('pretrained/{}_arch{}_e{}_d{}_edim{}_ks{}_par{}_date{}', ckpt_path)
+
+    print(ckpt_path)
+    print(result)
+    system_name, arch, num_epochs, num_diffusion_iters, diffusion_step_embed_dim, kernel_size, num_param, date_time = result
+    num_epochs = int(num_epochs)
+    num_diffusion_iters = int(num_diffusion_iters)
+    diffusion_step_embed_dim = int(diffusion_step_embed_dim)
+    kernel_size = int(kernel_size)
+    down_dims = [int(i) for i in arch.split('_')]
+
+    A_mat, B_mat, x_target, n_state, n_input, _ = import_dynamics(system_name)
+    dataset, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name)
+
+    stats = dataset.stats
+
+    # parameters
+    pred_horizon = 16
+    obs_horizon = 2
+    action_horizon = 8
+    # |o|o|                             observations: 2
+    # | |a|a|a|a|a|a|a|a|               actions executed: 8
+    # |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
+
+    noise_pred_net = ConditionalUnet1D(
+        input_dim=action_dim,
+        global_cond_dim=obs_dim * obs_horizon,
+        down_dims=down_dims,
+        diffusion_step_embed_dim=diffusion_step_embed_dim,  # 256
+        kernel_size=kernel_size,
+    )
+
+    noise_scheduler = DDPMScheduler(
+        num_train_timesteps=num_diffusion_iters,
+        # the choise of beta schedule has big impact on performance
+        # we found squared cosine works the best
+        beta_schedule='squaredcos_cap_v2',
+        # clip output to [-1,1] to improve stability
+        clip_sample=True,
+        # our network predicts noise (instead of denoised action)
+        prediction_type='epsilon'
+    )
+
+    # device transfer
+    device = torch.device('cuda')
+    _ = noise_pred_net.to(device)
+
+    # @markdown ### **Loading Pretrained Checkpoint**
+    state_dict = torch.load(ckpt_path, map_location='cuda')
+    ema_noise_pred_net = noise_pred_net
+    ema_noise_pred_net.load_state_dict(state_dict)
+    print('Pretrained weights loaded.')
+
+    #####################################################################################
+    # limit enviornment interaction to 200 steps before termination
+    max_steps = 400
+    n_sim = 100
+
+    ended_correctly = 0
+    REWARD = np.zeros((n_sim, 4))
+
+    for n_sim_idx in range(n_sim):
+        print(n_sim_idx, end=' ')
+        np.random.seed(n_sim_idx + 10000)  # seed was between 0 and 500 in the training set
+
+        obs = np.random.uniform(low=-5.0, high=5.0, size=(n_state))
+        # obs = np.random.random(obs_dim) * 10 - 5
+        if system_name == 'drone':
+            obs[6:8] = np.random.uniform(low=-1.0, high=1.0, size=(2, 1))
+            obs[8] = np.random.uniform(low=0, high=2 * np.pi)
+            obs[9:12] = np.random.uniform(low=-1.0, high=1.0, size=(3, 1))
+
+        # WE SHOULD STRUCTURE THIS BETTER get first observation
+
+        # obs = np.array([ 0.81204461, -2.81407099, -2.26550367, -1.43074666])
+        # if obs_dim == 4:
+        #     obs[1], obs[3] = 0, 0 # 2d
+        # if obs_dim == 6:
+        #     obs[1], obs[3], obs[5] = 0, 0, 0 # 3d
+        # if obs_dim > 8:
+        #     obs[3:] = 0 # 9, 10, 11,
+
+        OBS = []
+        ACTION_PRED = []
+        ############ obs
+        # keep a queue of last 2 steps of observations
+        obs_deque = collections.deque(
+            [obs] * obs_horizon, maxlen=obs_horizon)
+        # save visualization and rewards
+        # imgs = [env.render(mode='rgb_array')]
+        rewards = list()
+        done = False
+        step_idx = 0
+        with tqdm(total=max_steps, desc="Eval", leave=False) as pbar:
+            while not done:
+                B = 1
+                # stack the last obs_horizon (2) number of observations
+                obs_seq = np.stack(obs_deque)
+                # normalize observation
+                nobs = normalize_data(obs_seq, stats=stats['obs'])
+                # device transfer
+                nobs = torch.from_numpy(nobs).to(device, dtype=torch.float32)
+
+                # infer action
+                with torch.no_grad():
+                    # reshape observation to (B,obs_horizon*obs_dim)
+                    obs_cond = nobs.unsqueeze(0).flatten(start_dim=1)
+
+                    # initialize action from Gaussian noise
+                    noisy_action = torch.randn(
+                        (B, pred_horizon, action_dim), device=device)
+                    naction = noisy_action
+
+                    # init scheduler
+                    noise_scheduler.set_timesteps(num_diffusion_iters)
+
+                    for k in noise_scheduler.timesteps:
+                        # predict noise
+                        noise_pred = ema_noise_pred_net(
+                            sample=naction,
+                            timestep=k,
+                            global_cond=obs_cond
+                        )
+
+                        # inverse diffusion step (remove noise)
+                        naction = noise_scheduler.step(
+                            model_output=noise_pred,
+                            timestep=k,
+                            sample=naction
+                        ).prev_sample
+
+                # unnormalize action
+                naction = naction.detach().to('cpu').numpy()
+
+                # print('naction: ', action_pred.shape)
+                # (B, pred_horizon, action_dim)
+                naction = naction[0]
+                action_pred = unnormalize_data(naction, stats=stats['action'])
+
+                # print('action_pred: ', action_pred.shape)
+
+                # only take action_horizon number of actions
+                start = obs_horizon - 1  # obs horizon is 2
+                end = start + action_horizon
+                action = action_pred[start:end, :]
+                # (action_horizon, action_dim)
+                # print('action_pred: ', action.shape)
+
+                # execute action_horizon number of steps
+                # without replanning
+                for i in range(len(action)):
+
+                    OBS.append(obs)
+                    ACTION_PRED.append(action)
+
+                    # stepping env
+                    # obs, reward, done, info = env.step(action[i])
+                    obs = A_mat @ obs + B_mat @ action[i]
+
+                    dist = fn_distance(obs)  # how far are we
+                    speed = fn_speed(obs)
+
+                    rew_enable = dist < 1
+                    reward = rew_enable * (1 - dist)
+
+                    done = reward > 0.95 and speed < 0.1
+
+                    obs_deque.append(obs)
+
+                    # and reward/vis
+                    rewards.append(reward)
+                    # imgs.append(env.render(mode='rgb_array'))
+
+                    if done:
+                        ended_correctly += 1
+                        REWARD[n_sim_idx, :] = reward, speed, max(rewards), step_idx
+
+                    # update progress bar
+                    step_idx += 1
+                    pbar.update(1)
+                    pbar.set_postfix(reward=reward)
+                    if step_idx > max_steps:
+                        done = True
+
+                    if done:
+                        break
+
+        # print out the maximum target coverage
+        print('Score: ', max(rewards))
+
+        # visualize
+        # from IPython.display import Video
+        # vwrite('vis.mp4', imgs)
+        # Video('vis.mp4', embed=True, width=256, height=256)
+
+        return REWARD
+
 
 def training(system_name='2d',
              diffusion_step_embed_dim=256,
@@ -224,6 +427,10 @@ if __name__ == "__main__":
     #                     action='store_true')  # on/off flag
     # args = parser.parse_args()
     # print(args.filename, args.count, args.verbose)
+
+    ckpt_path = 'pretrained/2d_arch128_e2_d10_edim256_ks3_par1_20e06_date04_25_20_12_22/model_ema_2d_1.ckpt'
+    testing(ckpt_path)
+
     shrink = 1  # how much small the network wrt papers
     down_dims = [1024 // shrink] #256 // shrink, 512 // shrink,
 
