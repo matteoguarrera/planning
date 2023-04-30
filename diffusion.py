@@ -176,7 +176,7 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     )
 
     noise_scheduler = DDPMScheduler(
-        num_train_timesteps=15,
+        num_train_timesteps=num_diffusion_iters,
         # the choise of beta schedule has big impact on performance
         # we found squared cosine works the best
         beta_schedule='squaredcos_cap_v2',
@@ -457,20 +457,26 @@ def train_loop(dataloader,
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Diffusion Policy For Drone Path Planning')
+
+    parser.add_argument('-test', '--test-mode', default=False, type=bool, help='True if we are testing, False if we are training')
     #
     # parser.add_argument('filename')  # positional argument
-    # parser.add_argument('--system_name', default='3d')
+    parser.add_argument('-pm', '--pretrained-model', default='pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt', type=str, help='path to pretrained model')
+    parser.add_argument('-sn', '--system_name', default='2d', type=str, help='2d or 3d path planning for a drone')
     # parser.add_argument('--diffusion_step_embed_dim', default=256)
 
     # parser.add_argument('--system_name')  # option that takes a value
 
     # parser.add_argument('-v', '--verbose',
     #                     action='store_true')  # on/off flag
-    # args = parser.parse_args()
+    args = parser.parse_args()
     # print(args.filename, args.count, args.verbose)
+    test_mode = args.testing
+    system_name = args.system_name
 
-    ckpt_path = 'pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt'
-    testing(ckpt_path, max_steps=400, n_sim=100)
-
-    # training(system_name='2d')
+    if test_mode:        
+        ckpt_path = 'pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt'
+        testing(ckpt_path, max_steps=400, n_sim=100)
+    else:
+        training(system_name=system_name)
