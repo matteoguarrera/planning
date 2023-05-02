@@ -1,4 +1,6 @@
 import torch.random
+from diffusion_params import get_model_parameters_for_diffusion
+from init_logging import *
 
 from utils.imports import *
 from utils.Dataset import load_dataset, show_statistics
@@ -8,6 +10,16 @@ import argparse
 from parse import *
 from utils.dynamics import import_dynamics
 from utils.Dataset import normalize_data, unnormalize_data, load_dataset
+
+
+def set_reproductibility(seed=2023):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.backends.cudnn.deterministic = True
 
 
 def inference(obs, obs_horizon, max_steps,
@@ -150,12 +162,17 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     # | |a|a|a|a|a|a|a|a|               actions executed: 8
     # |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
 
+    # hardware settings
+    device = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    is_m1_arch = True if device == 'mps' else False
+
     noise_pred_net = ConditionalUnet1D(
         input_dim=action_dim,
         global_cond_dim=obs_dim * obs_horizon,
         down_dims=down_dims,
         diffusion_step_embed_dim=diffusion_step_embed_dim,  # 256
         kernel_size=kernel_size,
+        is_m1_arch=is_m1_arch
     )
 
     noise_scheduler = DDPMScheduler(
@@ -170,18 +187,16 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     )
 
     # device transfer
-    device = torch.device('cuda')
     _ = noise_pred_net.to(device)
 
     # @markdown ### **Loading Pretrained Checkpoint**
-    state_dict = torch.load(ckpt_path, map_location='cuda')
+    state_dict = torch.load(ckpt_path, map_location=device)
     ema_noise_pred_net = noise_pred_net
     ema_noise_pred_net.load_state_dict(state_dict)
     print('Pretrained weights loaded.')
 
     #####################################################################################
     TRAJECTORIES = []
-    ended_correctly = 0
     REWARD = np.zeros((n_sim, 5))
     for n_sim_idx in range(n_sim):
 
@@ -211,7 +226,7 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
                                                      ema_noise_pred_net, A_mat, B_mat, fn_speed, fn_distance)
         TRAJECTORIES.append(trajectory)
         # print out the maximum target coverage
-        # print('Score: ', max(rewards))
+        # print('Score: ', max(REWARD[n_sim_idx, :]))
 
     # visualize
     # from IPython.display import Video
@@ -221,32 +236,28 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     return REWARD, TRAJECTORIES, np.sum(REWARD[:, 0])
 
 
-def training(system_name='2d',
-             diffusion_step_embed_dim=256,
-             kernel_size=5,
-             down_dims=[256, 512, 1024],
-             num_epochs=100,
-             num_diffusion_iters=100):
+def training(system_name='2d'):
     # Import synthetic dataset
     # system_name can be '2d', '3d', 'drone'
     dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed = load_dataset(system_name=system_name)
-
-    # dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed  = load_dataset_lqr2d_observation() # to clean,  @carlo
 
     # Show distribution of trajectories length
     # same dataset as the paper
     show_statistics(dataset_ours=dataset_ours)
 
+    # get hyperparameters for diffusion model
+    params = get_model_parameters_for_diffusion()
+
     # create dataloader
     dataloader = torch.utils.data.DataLoader(
         dataset_ours,
-        batch_size=256,
-        num_workers=4,
+        batch_size=params['BATCH_SIZE'],
+        num_workers=params['NUM_WORKERS'],
         shuffle=True,
         # accelerate cpu-gpu transfer
-        pin_memory=True,
+        pin_memory=not params['IS_M1_ARCH'],
         # don't kill worker process after each epoch
-        persistent_workers=True
+        persistent_workers=not params['IS_M1_ARCH'],
     )
 
     # # visualize data in batch
@@ -254,22 +265,22 @@ def training(system_name='2d',
     # print("batch['obs'].shape:", batch['obs'].shape)
     # print("batch['action'].shape", batch['action'].shape)
 
-    TYPE = torch.float32
     obs_horizon = dataset_ours.obs_horizon
-    arch = str(down_dims)[1:-1].replace(', ', '_')
-    print('Dimension of the hidden layers: ', down_dims)
+    arch = str(params['DOWN_DIMS'])[1:-1].replace(', ', '_')
+    print('Dimension of the hidden layers: ', params['DOWN_DIMS'])
 
     # create network object
     noise_pred_net = ConditionalUnet1D(
         input_dim=action_dim,
         global_cond_dim=obs_dim * obs_horizon,
-        down_dims=down_dims,
-        diffusion_step_embed_dim=diffusion_step_embed_dim,  # haven't tuned yet, 256
-        kernel_size=kernel_size,
+        down_dims=params['DOWN_DIMS'],
+        diffusion_step_embed_dim=params['DIFFUSION_STEP_EMBEDDING_DIM'],
+        kernel_size=params['KERNEL_SIZE'],
+        is_m1_arch=params['IS_M1_ARCH']
     )
 
     noise_scheduler = DDPMScheduler(
-        num_train_timesteps=num_diffusion_iters,
+        num_train_timesteps=params['NUM_DIFFUSION_ITERS'],
         # the choise of beta schedule has big impact on performance
         # we found squared cosine works the best
         beta_schedule='squaredcos_cap_v2',
@@ -280,28 +291,32 @@ def training(system_name='2d',
     )
 
     # device transfer
-    device = torch.device('cuda')
-    _ = noise_pred_net.to(device)
+    _ = noise_pred_net.to(params['DEVICE'])
 
     # Exponential Moving Average
     # accelerates training and improves stability
     # holds a copy of the model weights
     ema = EMAModel(
         model=noise_pred_net,
-        power=0.75)
+        power=params['EMA_POWER']
+    )
 
     # Standard ADAM optimizer
     # Note that EMA parametesr are not optimized
-    optimizer = torch.optim.AdamW(
-        params=noise_pred_net.parameters(),
-        lr=1e-4, weight_decay=1e-6)
+    if params['OPTIMIZER'] == 'adamw':
+        optimizer = torch.optim.AdamW(
+            params=noise_pred_net.parameters(),
+            lr=params['LEARNING_RATE'] , weight_decay=params['WEIGHT_DECAY']
+        )
+    else:
+        raise NotImplementedError("No other optimizer other than AdamW has been tried yet.")
 
     # Cosine LR schedule with linear warmup
     lr_scheduler = get_scheduler(
         name='cosine',
         optimizer=optimizer,
-        num_warmup_steps=500,
-        num_training_steps=len(dataloader) * num_epochs
+        num_warmup_steps=params['COSINE_LR_NUM_WARMUP_STEPS'],
+        num_training_steps=len(dataloader) * params['NUM_EPOCHS']
     )
 
     # Training Loop
@@ -309,13 +324,17 @@ def training(system_name='2d',
     date_time = now.strftime("%m_%d_%H_%M_%S")
     num_param = f'{noise_pred_net.num_params:.2e}'.replace('+', '').replace('.', '_')
 
-    folder = f'pretrained/{system_name}_arch{arch}_e{num_epochs}_d{num_diffusion_iters}_edim{diffusion_step_embed_dim}' \
-             f'_ks{kernel_size}_par{num_param}_date{date_time}'
+    folder = f"pretrained/{system_name}_arch{arch}_e{params['NUM_EPOCHS']}_d{params['NUM_DIFFUSION_ITERS']}" \
+             f"_edim{params['DIFFUSION_STEP_EMBEDDING_DIM']}_ks{params['KERNEL_SIZE']}" \
+             f"_par{num_param}_date{date_time}"
+    
+    # initialize logging
+    init_logging(params, noise_pred_net)
 
     train_loop(dataloader,
                noise_pred_net, ema, optimizer, lr_scheduler, noise_scheduler,
-               num_epochs, device,
-               system_name, folder)
+               params['NUM_EPOCHS'], params['DEVICE'],
+               system_name, folder, dtype=params['DTYPE'])
 
 
 def train_loop(dataloader,
@@ -327,7 +346,8 @@ def train_loop(dataloader,
                num_epochs,
                device,
                system_name,
-               folder):
+               folder,
+               dtype):
     print(folder)
     os.makedirs(folder, exist_ok=True)
 
@@ -336,6 +356,7 @@ def train_loop(dataloader,
     writer = SummaryWriter(log_dir=folder)  # log tensorboard
 
     LOSS = []
+    GRADS = []
     with tqdm(range(num_epochs), desc='Epoch', leave=False) as tglobal:
         # epoch loop
         for epoch_idx in tglobal:
@@ -350,8 +371,8 @@ def train_loop(dataloader,
                 for nbatch in tepoch:
                     # data normalized in dataset
                     # device transfer
-                    nobs = nbatch['obs'].to(device)
-                    naction = nbatch['action'].to(device)
+                    nobs = nbatch['obs'].to(dtype).to(device)
+                    naction = nbatch['action'].to(dtype).to(device)
                     B = nobs.shape[0]
 
                     # observation as FiLM conditioning
@@ -392,6 +413,11 @@ def train_loop(dataloader,
                     # optimize
                     loss.backward()
                     optimizer.step()
+
+                    current_grad = {}
+                    current_grad = [(name, param.grad.detach().clone().to('cpu')) for name, param in noise_pred_net.named_parameters()]
+                    GRADS.append(current_grad)
+
                     optimizer.zero_grad()
                     # step lr scheduler every batch
                     # this is different from standard pytorch behavior
@@ -404,12 +430,16 @@ def train_loop(dataloader,
                     loss_cpu = loss.item()
                     epoch_loss.append(loss_cpu)
                     tepoch.set_postfix(loss=loss_cpu)
+                    wandb.log({ 'Loss': loss_cpu })
 
-            writer.add_scalar('Training/loss_avg', np.mean(epoch_loss), epoch_idx)
-            writer.add_scalar('Training/loss_std', np.std(epoch_loss), epoch_idx)
+            writer.add_scalar('Mean Training Loss', np.mean(epoch_loss), epoch_idx)
+            wandb.log({'Mean Training Loss': np.mean(epoch_loss)})
+            writer.add_scalar('Training Loss Std', np.std(epoch_loss), epoch_idx)
+            wandb.log({'Training Loss Std': np.std(epoch_loss)})
 
             LOSS.append(epoch_loss)
             tglobal.set_postfix(loss=np.mean(epoch_loss))
+            
     torch.save(noise_pred_net.state_dict(), f'./{folder}/model_{ckpt_filename}.ckpt')
     torch.save(ema.averaged_model.state_dict(), f'./{folder}/model_ema_{ckpt_filename}.ckpt')
 
@@ -427,28 +457,26 @@ def train_loop(dataloader,
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Diffusion Policy For Drone Path Planning')
+
+    parser.add_argument('-test', '--test-mode', default=False, type=bool, help='True if we are testing, False if we are training')
     #
     # parser.add_argument('filename')  # positional argument
-    # parser.add_argument('--system_name', default='3d')
+    parser.add_argument('-pm', '--pretrained-model', default='pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt', type=str, help='path to pretrained model')
+    parser.add_argument('-sn', '--system_name', default='2d', type=str, help='2d or 3d path planning for a drone')
     # parser.add_argument('--diffusion_step_embed_dim', default=256)
 
     # parser.add_argument('--system_name')  # option that takes a value
 
     # parser.add_argument('-v', '--verbose',
     #                     action='store_true')  # on/off flag
-    # args = parser.parse_args()
+    args = parser.parse_args()
     # print(args.filename, args.count, args.verbose)
+    test_mode = args.testing
+    system_name = args.system_name
 
-    ckpt_path = 'pretrained/2d_arch128_e2_d10_edim256_ks3_par1_20e06_date04_25_20_12_22/model_ema_2d_1.ckpt'
-    testing(ckpt_path)
-
-    shrink = 1  # how much small the network wrt papers
-    down_dims = [1024 // shrink]  # 256 // shrink, 512 // shrink,
-
-    training(system_name='2d',
-             diffusion_step_embed_dim=256,
-             kernel_size=5,
-             down_dims=down_dims,
-             num_epochs=100,
-             num_diffusion_iters=50)
+    if test_mode:        
+        ckpt_path = 'pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt'
+        testing(ckpt_path, max_steps=400, n_sim=100)
+    else:
+        training(system_name=system_name)
