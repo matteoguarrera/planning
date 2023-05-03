@@ -7,7 +7,8 @@
 #@markdown - `SinusoidalPosEmb` Positional encoding for the diffusion iteration k
 #@markdown - `Downsample1d` Strided convolution to reduce temporal resolution
 #@markdown - `Upsample1d` Transposed convolution to increase temporal resolution
-#@markdown - `Conv1dBlock` Conv1d --> GroupNorm --> Mish
+#@markdown - `Conv1dBlock` Conv1d --> BatchNorm/GroupNorm --> Activation Function
+#@markdown - The Normalization Layer & Activation Function are dependent on if we are running on a MPS device
 #@markdown - `ConditionalResidualBlock1D` Takes two inputs `x` and `cond`. \
 #@markdown `x` is passed through 2 `Conv1dBlock` stacked together with residual connection.
 #@markdown `cond` is applied to `x` with [FiLM](https://arxiv.org/abs/1709.07871) conditioning.
@@ -49,16 +50,18 @@ class Upsample1d(nn.Module):
 
 class Conv1dBlock(nn.Module):
     '''
-        Conv1d --> GroupNorm --> Mish
+        Conv1d --> BatchNorm/GroupNorm --> Mish/SiLU
     '''
 
-    def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8):
+    def __init__(self, inp_channels, out_channels, kernel_size, n_groups=8, is_m1_arch=False):
         super().__init__()
 
+        activation_fn = nn.SiLU() if is_m1_arch else nn.Mish()
+        normalization_layer = nn.BatchNorm1d(out_channels) if is_m1_arch else nn.GroupNorm(n_groups, out_channels)
         self.block = nn.Sequential(
             nn.Conv1d(inp_channels, out_channels, kernel_size, padding=kernel_size // 2),
-            nn.GroupNorm(n_groups, out_channels),
-            nn.Mish(),
+            normalization_layer,
+            activation_fn,
         )
 
     def forward(self, x):
@@ -71,20 +74,22 @@ class ConditionalResidualBlock1D(nn.Module):
                  out_channels,
                  cond_dim,
                  kernel_size=3,
-                 n_groups=8):
+                 n_groups=8,
+                 is_m1_arch=False):
         super().__init__()
 
         self.blocks = nn.ModuleList([
-            Conv1dBlock(in_channels, out_channels, kernel_size, n_groups=n_groups),
-            Conv1dBlock(out_channels, out_channels, kernel_size, n_groups=n_groups),
+            Conv1dBlock(in_channels, out_channels, kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
+            Conv1dBlock(out_channels, out_channels, kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
         ])
 
         # FiLM modulation https://arxiv.org/abs/1709.07871
         # predicts per-channel scale and bias
         cond_channels = out_channels * 2
         self.out_channels = out_channels
+        activation_fn = nn.SiLU() if is_m1_arch else nn.Mish()
         self.cond_encoder = nn.Sequential(
-            nn.Mish(),
+            activation_fn,
             nn.Linear(cond_dim, cond_channels),
             nn.Unflatten(-1, (-1, 1))
         )
@@ -122,7 +127,8 @@ class ConditionalUnet1D(nn.Module):
                  diffusion_step_embed_dim=256,
                  down_dims=[256, 512, 1024],
                  kernel_size=5,
-                 n_groups=8
+                 n_groups=8,
+                 is_m1_arch=False
                  ):
         """
         input_dim: Dim of actions.
@@ -133,6 +139,7 @@ class ConditionalUnet1D(nn.Module):
           The length of this array determines numebr of levels.
         kernel_size: Conv kernel size
         n_groups: Number of groups for GroupNorm
+        is_m1_arch: Whether to use Apple M1 (mps) architecture (BN instead of GN, SiLU instead of Mish)
         """
 
         super().__init__()
@@ -140,10 +147,11 @@ class ConditionalUnet1D(nn.Module):
         start_dim = down_dims[0]
 
         dsed = diffusion_step_embed_dim
+        activation_fn = nn.SiLU() if is_m1_arch else nn.Mish()
         diffusion_step_encoder = nn.Sequential(
             SinusoidalPosEmb(dsed),
             nn.Linear(dsed, dsed * 4),
-            nn.Mish(),
+            activation_fn,
             nn.Linear(dsed * 4, dsed),
         )
         cond_dim = dsed + global_cond_dim
@@ -153,11 +161,11 @@ class ConditionalUnet1D(nn.Module):
         self.mid_modules = nn.ModuleList([
             ConditionalResidualBlock1D(
                 mid_dim, mid_dim, cond_dim=cond_dim,
-                kernel_size=kernel_size, n_groups=n_groups
+                kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch
             ),
             ConditionalResidualBlock1D(
                 mid_dim, mid_dim, cond_dim=cond_dim,
-                kernel_size=kernel_size, n_groups=n_groups
+                kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch
             ),
         ])
 
@@ -167,10 +175,10 @@ class ConditionalUnet1D(nn.Module):
             down_modules.append(nn.ModuleList([
                 ConditionalResidualBlock1D(
                     dim_in, dim_out, cond_dim=cond_dim,
-                    kernel_size=kernel_size, n_groups=n_groups),
+                    kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
                 ConditionalResidualBlock1D(
                     dim_out, dim_out, cond_dim=cond_dim,
-                    kernel_size=kernel_size, n_groups=n_groups),
+                    kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
                 Downsample1d(dim_out) if not is_last else nn.Identity()
             ]))
 
@@ -180,15 +188,15 @@ class ConditionalUnet1D(nn.Module):
             up_modules.append(nn.ModuleList([
                 ConditionalResidualBlock1D(
                     dim_out * 2, dim_in, cond_dim=cond_dim,
-                    kernel_size=kernel_size, n_groups=n_groups),
+                    kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
                 ConditionalResidualBlock1D(
                     dim_in, dim_in, cond_dim=cond_dim,
-                    kernel_size=kernel_size, n_groups=n_groups),
+                    kernel_size=kernel_size, n_groups=n_groups, is_m1_arch=is_m1_arch),
                 Upsample1d(dim_in) if not is_last else nn.Identity()
             ]))
 
         final_conv = nn.Sequential(
-            Conv1dBlock(start_dim, start_dim, kernel_size=kernel_size),
+            Conv1dBlock(start_dim, start_dim, kernel_size=kernel_size, is_m1_arch=is_m1_arch),
             nn.Conv1d(start_dim, input_dim, 1),
         )
 
