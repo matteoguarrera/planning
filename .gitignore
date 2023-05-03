@@ -4,8 +4,11 @@ pusht_demo.ipynb
 datasets/*
 pretrained/*
 pretrained_old
+inference
 # Hidden files
 .*
+*.pdf
+__*
 
 # Video, zip, pickle, checkpoints
 *.mp4
