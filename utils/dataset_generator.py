@@ -6,6 +6,28 @@ import pickle
 from utils.dynamics import import_dynamics
 
 
+def drone_initial_condition(obs0):
+    obs0[6:8] = np.random.uniform(low=-1.0, high=1.0, size=(2, 1))
+    obs0[8] = np.random.uniform(low=0, high=2 * np.pi)
+    obs0[9:12] = np.random.uniform(low=-1.0, high=1.0, size=(3, 1))
+    return obs0
+
+
+def zero_velocity_initial_condition(obs0):
+    obs_dim = obs0.shape[1]
+
+    if obs_dim == 4:
+        obs0[1], obs0[3] = 0, 0  # 2d
+    if obs_dim == 6:
+        obs0[1], obs0[3], obs0[5] = 0, 0, 0  # 3d
+    if obs_dim > 8:
+        obs0[3:] = 0  # 9, 10, 11
+
+    raise NotImplementedError
+
+    return obs0
+
+
 def generate_dataset(system_name):
     """ generate a dataset using LQR algorithm, please refer to the paper for further details
         system name: ['2d', '3d', 'drone']
@@ -26,9 +48,7 @@ def generate_dataset(system_name):
         np.random.seed(i_contr)
         x0 = np.random.uniform(low=-5.0, high=5.0, size=(n_state, 1))
         if name == 'drone':
-            x0[6:8] = np.random.uniform(low=-1.0, high=1.0, size=(2, 1))
-            x0[8] = np.random.uniform(low=0, high=2 * np.pi)
-            x0[9:12] = np.random.uniform(low=-1.0, high=1.0, size=(3, 1))
+            x0 = drone_initial_condition(x0)
 
         x_data[i_contr * rollout_len, :] = x0.reshape(n_state, )
 

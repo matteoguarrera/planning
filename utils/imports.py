@@ -61,6 +61,16 @@ import pickle
 from importlib import reload  # Python 3.4+
 import matplotlib.pyplot as plt
 
+
+def set_reproductibility(seed=2023):
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.backends.cudnn.deterministic = True
+
 ##################### [No behavioral cloning] RL for new trajectory #######################
 # from typing import Callable
 # from stable_baselines3 import A2C, TD3
