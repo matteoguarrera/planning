@@ -2,6 +2,7 @@ import platform
 import torch
 from parse import *
 
+
 def get_model_parameters_for_diffusion_from_string(string):
 
     result = parse('pretrained/{}_arch{}_e{}_d{}_edim{}_ks{}_par{}_date{}', string)
@@ -55,6 +56,7 @@ def get_model_parameters_for_diffusion():
     params['IS_M1_ARCH'] = True if params['DEVICE'] == 'mps' else False
     params['BATCH_SIZE'] = 128 if params['IS_M1_ARCH'] else 256
     params['NUM_WORKERS'] = 2 if params['IS_M1_ARCH'] else 4
+    params['ARCH'] = str(params['DOWN_DIMS'])[1:-1].replace(', ', '_')
 
     # Apply shrinkage to the model
     if params['SHRINK'] > 1:
