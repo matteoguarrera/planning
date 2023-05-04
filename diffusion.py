@@ -17,10 +17,6 @@ class Diffusion:
                  obs_dim,
                  obs_horizon,
                  params,
-                 # down_dims,
-                 # diffusion_step_embed_dim,
-                 # num_diffusion_iters,
-                 # kernel_size,
                  num_training_steps=None,
                  ckpt_path=None,
                  training_flag=True):
@@ -45,7 +41,7 @@ class Diffusion:
 
         self.noise_scheduler = DDPMScheduler(
             num_train_timesteps=params['NUM_DIFFUSION_ITERS'],
-            # the choise of beta schedule has big impact on performance
+            # the choose of beta schedule has big impact on performance
             # we found squared cosine works the best
             beta_schedule='squaredcos_cap_v2',
             # clip output to [-1,1] to improve stability
@@ -65,7 +61,7 @@ class Diffusion:
                 power=params['EMA_POWER'])
 
             # Standard ADAM optimizer
-            # Note that EMA parametesr are not optimized
+            # Note that EMA parameters are not optimized
             if params['OPTIMIZER'] == 'adamw':
                 self.optimizer = torch.optim.AdamW(
                     params=self.noise_pred_net.parameters(),
@@ -78,14 +74,12 @@ class Diffusion:
             self.lr_scheduler = get_scheduler(
                 name='cosine',
                 optimizer=self.optimizer,
-                # num_warmup_steps=500,
                 num_warmup_steps=params['COSINE_LR_NUM_WARMUP_STEPS'],
-                # num_training_steps=len(dataloader) * params['NUM_EPOCHS']
                 num_training_steps=num_training_steps
             )
 
         else:
-            # @markdown ### **Loading Pretrained Checkpoint**
+            # **Loading Pretrained Checkpoint**
             state_dict = torch.load(ckpt_path, map_location=self.device)
             self.ema_noise_pred_net = self.noise_pred_net
             self.ema_noise_pred_net.load_state_dict(state_dict)
@@ -133,12 +127,11 @@ def inference(obs, diffusion_obj, max_steps, stats, pred_horizon, action_horizon
     torch.manual_seed(0)  # try to make diffusion model predictable
     OBS = []
     ACTION_PRED = []
-    ############ obs
+
     # keep a queue of last 2 steps of observations
     obs_deque = collections.deque(
         [obs] * diffusion_obj.obs_horizon, maxlen=diffusion_obj.obs_horizon)
-    # save visualization and rewards
-    # imgs = [env.render(mode='rgb_array')]
+
     rewards = list()
     done = False
     step_idx = 0
@@ -187,13 +180,9 @@ def inference(obs, diffusion_obj, max_steps, stats, pred_horizon, action_horizon
 
                 obs_deque.append(obs)
 
-                # and reward/vis
                 rewards.append(reward)
-                # imgs.append(env.render(mode='rgb_array'))
 
                 if done:
-                    # ended_correctly += 1
-                    # REWARD[n_sim_idx, :] = \
                     return (True, reward, speed, max(rewards), step_idx), (OBS, ACTION_PRED)
 
                 # update progress bar
@@ -206,15 +195,15 @@ def inference(obs, diffusion_obj, max_steps, stats, pred_horizon, action_horizon
                     # too many steps
                     return (False, reward, speed, max(rewards), step_idx), (OBS, ACTION_PRED)
 
-                # if done:
-                #     break
-
 
 def testing(ckpt_path, max_steps=400, n_sim=100):
     # limit environment interaction to 200 steps before termination
 
     A_mat, B_mat, x_target, n_state, n_input, _ = import_dynamics(system_name)
+
     dataset, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name)
+
+    params = get_model_parameters_for_diffusion_from_string(ckpt_path)
 
     stats = dataset.stats
     # parameters
@@ -224,29 +213,22 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
     # |o|o|                             observations: 2
     # | |a|a|a|a|a|a|a|a|               actions executed: 8
     # |p|p|p|p|p|p|p|p|p|p|p|p|p|p|p|p| actions predicted: 16
-    params = get_model_parameters_for_diffusion_from_string(ckpt_path)
 
     diffusion_obj = Diffusion(action_dim=action_dim,
                               obs_dim=obs_dim,
                               obs_horizon=obs_horizon,
                               params=params,
-                              # down_dims=down_dims,
-                              # diffusion_step_embed_dim=diffusion_step_embed_dim,
-                              # num_diffusion_iters=num_diffusion_iters,
-                              # kernel_size=kernel_size,
                               ckpt_path=ckpt_path,
                               training_flag=False)  # inference
 
     TRAJECTORIES = []
-    # ended_correctly = 0
     REWARD = np.zeros((n_sim, 5))
     for n_sim_idx in range(n_sim):
 
         # print(n_sim_idx, end=' ')
         np.random.seed(n_sim_idx + 10000)  # seed was between 0 and 500 in the training set
 
-        obs = np.random.uniform(low=-5.0, high=5.0, size=(n_state))
-        # obs = np.random.random(obs_dim) * 10 - 5
+        obs = np.random.uniform(low=-5.0, high=5.0, size=n_state)
         if system_name == 'drone':
             obs = drone_initial_condition(obs)
             # obs = zero_velocity_initial_condition(obs)
@@ -256,27 +238,24 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
                                                      A_mat, B_mat, fn_speed, fn_distance)
         TRAJECTORIES.append(trajectory)
 
-    # visualize
-    # from IPython.display import Video
-    # vwrite('vis.mp4', imgs)
-    # Video('vis.mp4', embed=True, width=256, height=256)
-
     return REWARD, TRAJECTORIES, np.sum(REWARD[:, 0])
 
 
-def training(system_name='2d'):
+def training(system='2d'):
+    # get hyper-parameters for diffusion model
+    params = get_model_parameters_for_diffusion()
+
     # Import synthetic dataset
     # system_name can be '2d', '3d', 'drone'
-    dataset_ours, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name=system_name)
+    dataset_ours, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name=system,
+                                                                               dtype=params['DTYPE'],
+                                                                               device=params['DEVICE'])
 
-    # dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed  = load_dataset_lqr2d_observation() # to clean,  @carlo
+    # dataset_ours, obs_dim, action_dim, name, fn_distance, fn_speed  = load_dataset_lqr2d_observation() #  @carlo
 
     # Show distribution of trajectories length
     # same dataset as the paper
     show_statistics(dataset_ours=dataset_ours)
-
-    # get hyperparameters for diffusion model
-    params = get_model_parameters_for_diffusion()
 
     # create dataloader
     dataloader = torch.utils.data.DataLoader(
@@ -292,18 +271,13 @@ def training(system_name='2d'):
 
     TYPE = torch.float32
     obs_horizon = dataset_ours.obs_horizon
-    # arch = str(down_dims)[1:-1].replace(', ', '_')
-    arch = str(params['DOWN_DIMS'])[1:-1].replace(', ', '_')
+
     print('Dimension of the hidden layers: ', params['DOWN_DIMS'])
 
     diffusion_obj = Diffusion(action_dim=action_dim,
                               obs_dim=obs_dim,
                               obs_horizon=obs_horizon,
                               params=params,
-                              # down_dims=down_dims,
-                              # diffusion_step_embed_dim=diffusion_step_embed_dim,
-                              # num_diffusion_iters=num_diffusion_iters,
-                              # kernel_size=kernel_size,
                               num_training_steps=len(dataloader) * params['NUM_EPOCHS'])
 
     # Training Loop
@@ -311,7 +285,7 @@ def training(system_name='2d'):
     date_time = now.strftime("%m_%d_%H_%M_%S")
     num_param = f'{diffusion_obj.noise_pred_net.num_params:.2e}'.replace('+', '').replace('.', '_')
 
-    folder = f"pretrained/{system_name}_arch{arch}_e{params['NUM_EPOCHS']}_d{params['NUM_DIFFUSION_ITERS']}" \
+    folder = f"pretrained/{system}_arch{params['ARCH']}_e{params['NUM_EPOCHS']}_d{params['NUM_DIFFUSION_ITERS']}" \
              f"_edim{params['DIFFUSION_STEP_EMBEDDING_DIM']}_ks{params['KERNEL_SIZE']}" \
              f"_par{num_param}_date{date_time}"
 
@@ -319,10 +293,10 @@ def training(system_name='2d'):
     if diffusion_obj.wandb:
         init_logging(params, diffusion_obj.noise_pred_net)
 
-    train_loop(dataloader, diffusion_obj, params['NUM_EPOCHS'], system_name, folder, params['DTYPE'])
+    train_loop(dataloader, diffusion_obj, params['NUM_EPOCHS'], system, folder, params['DTYPE'])
 
 
-def train_loop(dataloader, diffusion_obj, num_epochs, system_name, folder, dtype):
+def train_loop(dataloader, diffusion_obj, num_epochs, system, folder, dtype):
     print(folder)
     os.makedirs(folder, exist_ok=True)
     writer = SummaryWriter(log_dir=folder)  # log tensorboard
@@ -333,10 +307,11 @@ def train_loop(dataloader, diffusion_obj, num_epochs, system_name, folder, dtype
         # epoch loop
         for epoch_idx in t_global:
             epoch_loss = list()
-            ckpt_filename = f'{system_name}_{epoch_idx}'
+            ckpt_filename = f'{system}_{epoch_idx}'
 
             if epoch_idx % 30 == 0 and epoch_idx > 0:
                 torch.save(diffusion_obj.ema.averaged_model.state_dict(), f'./{folder}/model_ema_{ckpt_filename}.ckpt')
+
 
             # batch loop
             with tqdm(dataloader, desc='Batch', leave=False) as t_epoch:
@@ -406,11 +381,9 @@ def train_loop(dataloader, diffusion_obj, num_epochs, system_name, folder, dtype
                     epoch_loss.append(loss_cpu)
                     t_epoch.set_postfix(loss=loss_cpu)
 
-            # writer.add_scalar('Training/loss_avg', np.mean(epoch_loss), epoch_idx)
-            # writer.add_scalar('Training/loss_std', np.std(epoch_loss), epoch_idx)
+            writer.add_scalar('Training/loss_avg', np.mean(epoch_loss), epoch_idx)
+            writer.add_scalar('Training/loss_avg', np.std(epoch_loss), epoch_idx)
 
-            writer.add_scalar('Mean Training Loss', np.mean(epoch_loss), epoch_idx)
-            writer.add_scalar('Training Loss Std', np.std(epoch_loss), epoch_idx)
             if diffusion_obj.wandb:
                 wandb.log({'Mean Training Loss': np.mean(epoch_loss)})
                 wandb.log({'Training Loss Std': np.std(epoch_loss)})
@@ -439,7 +412,7 @@ def train_loop(dataloader, diffusion_obj, num_epochs, system_name, folder, dtype
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Diffusion Policy For Drone Path Planning')
 
-    parser.add_argument('-test', '--test-mode', default=True, type=bool,
+    parser.add_argument('-test', '--test-mode', default=False, type=bool,
                         help='True if we are testing, False if we are training')
 
     parser.add_argument('-pm', '--pretrained-model', default='pretrained/2d_arch256_e100_d100_edim256_ks5_'
@@ -454,9 +427,9 @@ if __name__ == "__main__":
 
     if test_mode:
         ckpt_path = args.pretrained_model #'pretrained/2d_arch1024_e100_d50_edim256_ks5_par4_47e07_date04_29_18_53_40/model_ema_2d_30.ckpt'
-        testing(ckpt_path, max_steps=400, n_sim=100)
+        testing(ckpt_path, max_steps=400, n_sim=10)  #100
     else:
-        training(system_name=system_name)
+        training(system=system_name)
 
 
     # parser = argparse.ArgumentParser(description='')
