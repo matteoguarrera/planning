@@ -192,7 +192,7 @@ def __load_dataset_push_t__():
     return dataset
 
 
-def load_dataset(system_name: str):
+def load_dataset(system_name: str, dtype, device):
     print(f'[Dataset] Loading Dataset {system_name} from memory')
     if system_name == '2d':
         fn_dataset = __load_dataset_lqr2d__
@@ -206,7 +206,7 @@ def load_dataset(system_name: str):
     else:
         raise f'Dataset {system_name} not known'
 
-    dataset, obs_dim, action_dim, name, fn_distance, fn_speed = fn_dataset()
+    dataset, obs_dim, action_dim, name, fn_distance, fn_speed = fn_dataset(dtype, device)
 
     return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
 
@@ -214,7 +214,7 @@ def load_dataset(system_name: str):
 """ Our dataset are build on top or PushTDataset class"""
 
 
-def __load__(system_name):
+def __load__(system_name, dtype, device):
     dataset = __load_dataset_push_t__()
     if not os.path.isfile(f'datasets/dataset_{system_name}.pkl'):
         generate_dataset(system_name=system_name)
@@ -233,9 +233,10 @@ def __load__(system_name):
     return dataset
 
 
-def __load_dataset_lqr2d__():
-    name = '2d'
-    dataset = __load__(name)
+def __load_dataset_lqr2d__(dtype, device):
+    dataset = __load__(system_name='2d',
+                       dtype=dtype,
+                       device=device)
 
     # observation and action dimensions
     obs_dim, action_dim = 4, 2
@@ -244,32 +245,34 @@ def __load_dataset_lqr2d__():
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2]])  # x, xdot, y, ydot
     fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3]])
 
-    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
+    print(f'[2d][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+    return dataset, obs_dim, action_dim, '2d', fn_distance, fn_speed
 
 
-def __load_dataset_lqr3d__():
-    name = '3d'
-    dataset = __load__(name)
+def __load_dataset_lqr3d__(dtype, device):
+    dataset = __load__(system_name='3d',
+                       dtype=dtype,
+                       device=device)
+
     # observation and action dimensions
-
     obs_dim = 6
     action_dim = 3
 
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[2], _obs[4]])  # x, xdot, y, ydot, z, zdot
     fn_speed = lambda _obs: np.linalg.norm([_obs[1], _obs[3], _obs[5]])  # x, xdot, y, ydot, z, zdot
 
-    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
+    print(f'[3d][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+    return dataset, obs_dim, action_dim, '3d', fn_distance, fn_speed
 
 
-def __load_dataset_drone__():
-    name = 'drone'
-    dataset = __load__(name)
+def __load_dataset_drone__(dtype, device):
+    dataset = __load__(system_name='drone',
+                       dtype=dtype,
+                       device=device)
 
     # observation and action dimensions
     obs_dim = 12
@@ -278,10 +281,11 @@ def __load_dataset_drone__():
     fn_distance = lambda _obs: np.linalg.norm([_obs[0], _obs[1], _obs[2]])  # x, y, z, xdot, ydot, zdot
     fn_speed = lambda _obs: np.linalg.norm([_obs[3], _obs[4], _obs[5]])  # x, y, z, xdot, ydot, zdot
 
-    print(f'[{name}][@carlo change] Obs: x, x_dot, y, y_dot')
+    print(f'[drone][@carlo change] Obs: x, x_dot, y, y_dot')
     print('[@carlo change] Action: x_acc, y_ acc (?)')
     print('Observation Dim: ', obs_dim, 'Action Dim: ', action_dim)
-    return dataset, obs_dim, action_dim, name, fn_distance, fn_speed
+
+    return dataset, obs_dim, action_dim, 'drone', fn_distance, fn_speed
 
 
 def load_dataset_lqr2d_observation():
