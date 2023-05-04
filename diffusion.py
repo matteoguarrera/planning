@@ -412,7 +412,7 @@ def train_loop(dataloader, diffusion_obj, num_epochs, system, folder, dtype):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Diffusion Policy For Drone Path Planning')
 
-    parser.add_argument('-test', '--test-mode', default=False, type=bool,
+    parser.add_argument('-test', '--test-mode', default=True, type=bool,
                         help='True if we are testing, False if we are training')
 
     parser.add_argument('-pm', '--pretrained-model', default='pretrained/2d_arch256_e100_d100_edim256_ks5_'
@@ -421,6 +421,11 @@ if __name__ == "__main__":
 
     parser.add_argument('-sn', '--system_name', default='2d', type=str, help='2d or 3d path planning for a drone')
     args = parser.parse_args()
+    # download pretrained models and stuff
+
+    os.makedirs('inference', exist_ok=True)
+    os.makedirs('pretrained', exist_ok=True)
+
     print(args)
     test_mode = args.test_mode
     system_name = args.system_name
@@ -432,12 +437,6 @@ if __name__ == "__main__":
         training(system=system_name)
 
 
-    # download pretrained models and stuff
-    import requests
-    os.makedirs('inference', exist_ok=True)
-    os.makedirs('pretrained', exist_ok=True)
-
-    # response = requests.get("https://api.github.com/repos/v2ray/v2ray-core/releases/latest")
     # print(response.json()["name"])
 
     # parser = argparse.ArgumentParser(description='')
