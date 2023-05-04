@@ -14,6 +14,7 @@ def get_model_parameters_for_diffusion_from_string(string):
     down_dims = [int(i) for i in arch.split('_')]
 
     params = get_model_parameters_for_diffusion()
+    params['SYSTEM_NAME'] = system_name
     params['KERNEL_SIZE'] = kernel_size
     params['NUM_DIFFUSION_ITERS'] = num_diffusion_iters
     params['DIFFUSION_STEP_EMBEDDING_DIM'] = diffusion_step_embed_dim
@@ -33,6 +34,7 @@ def get_model_parameters_for_diffusion():
         # Hardware
         'DEVICE': 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu',
         # General
+        'SYSTEM_NAME': '2d',
         'SHRINK': 1,
         'LOG_DIR': 'logs',
         'NUM_EPOCHS': 100,

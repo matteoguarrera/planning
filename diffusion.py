@@ -198,12 +198,12 @@ def inference(obs, diffusion_obj, max_steps, stats, pred_horizon, action_horizon
 
 def testing(ckpt_path, max_steps=400, n_sim=100):
     # limit environment interaction to 200 steps before termination
-
-    A_mat, B_mat, x_target, n_state, n_input, _ = import_dynamics(system_name)
-
-    dataset, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name)
-
     params = get_model_parameters_for_diffusion_from_string(ckpt_path)
+
+    A_mat, B_mat, x_target, n_state, n_input, _ = import_dynamics(system_name=params['SYSTEM_NAME'])
+    dataset, obs_dim, action_dim, _, fn_distance, fn_speed = load_dataset(system_name=params['SYSTEM_NAME'],
+                                                                          dtype=params['DTYPE'],
+                                                                          device=params['DEVICE'])
 
     stats = dataset.stats
     # parameters
@@ -229,7 +229,7 @@ def testing(ckpt_path, max_steps=400, n_sim=100):
         np.random.seed(n_sim_idx + 10000)  # seed was between 0 and 500 in the training set
 
         obs = np.random.uniform(low=-5.0, high=5.0, size=n_state)
-        if system_name == 'drone':
+        if params['SYSTEM_NAME'] == 'drone':
             obs = drone_initial_condition(obs)
             # obs = zero_velocity_initial_condition(obs)
 
@@ -432,6 +432,14 @@ if __name__ == "__main__":
         training(system=system_name)
 
 
+    # download pretrained models and stuff
+    import requests
+    os.makedirs('inference', exist_ok=True)
+    os.makedirs('pretrained', exist_ok=True)
+
+    # response = requests.get("https://api.github.com/repos/v2ray/v2ray-core/releases/latest")
+    # print(response.json()["name"])
+
     # parser = argparse.ArgumentParser(description='')
     #
     # parser.add_argument('filename')  # positional argument
@@ -448,76 +456,3 @@ if __name__ == "__main__":
     # ckpt_path = 'pretrained/2d_arch128_e2_d10_edim256_ks3_par1_20e06_date04_25_20_12_22/model_ema_2d_1.ckpt'
     # testing(ckpt_path)
 
-    # shrink = 1  # how much small the network wrt papers
-    # down_dims = [1024 // shrink]  # 256 // shrink, 512 // shrink,
-    #
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[512, 1024],
-    #          num_epochs=100,
-    #          num_diffusion_iters=100)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[256],
-    #          num_epochs=100,
-    #          num_diffusion_iters=50)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[256],
-    #          num_epochs=100,
-    #          num_diffusion_iters=100)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[512],
-    #          num_epochs=100,
-    #          num_diffusion_iters=50)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[512],
-    #          num_epochs=100,
-    #          num_diffusion_iters=100)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[1024],
-    #          num_epochs=100,
-    #          num_diffusion_iters=50)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[1024],
-    #          num_epochs=100,
-    #          num_diffusion_iters=100)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[512, 1024],
-    #          num_epochs=100,
-    #          num_diffusion_iters=50)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[256, 512],
-    #          num_epochs=100,
-    #          num_diffusion_iters=50)
-    #
-    # training(system_name='3d',
-    #          diffusion_step_embed_dim=256,
-    #          kernel_size=5,
-    #          down_dims=[256, 512],
-    #          num_epochs=100,
-    #          num_diffusion_iters=100)
