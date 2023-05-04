@@ -28,7 +28,7 @@ def zero_velocity_initial_condition(obs0):
     return obs0
 
 
-def generate_dataset(system_name):
+def generate_dataset(system_name, baseline=False):
     """ generate a dataset using LQR algorithm, please refer to the paper for further details
         system name: ['2d', '3d', 'drone']
     """
@@ -42,10 +42,18 @@ def generate_dataset(system_name):
     x_data = np.zeros((n_rand_controllers * rollout_len, n_state))
     u_data = np.zeros((n_rand_controllers * rollout_len, n_input))
     finish_token = np.zeros((n_rand_controllers * rollout_len,))
+    if baseline:
+        stats = {'rollout_len': np.zeros(n_rand_controllers),  # max length of the rollout
+                 'i_rollout': np.zeros(n_rand_controllers),  # length of the actual rollout
+                 'dist_to_target': np.zeros(n_rand_controllers),  # last dist to target
+                 'x0': np.zeros((n_rand_controllers, n_state))}
 
     for i_contr in range(n_rand_controllers):
+        if baseline:
+            np.random.seed(i_contr + 10000)
+        else:
+            np.random.seed(i_contr)
 
-        np.random.seed(i_contr)
         x0 = np.random.uniform(low=-5.0, high=5.0, size=(n_state, 1))
         if name == 'drone':
             x0 = drone_initial_condition(x0)
@@ -63,8 +71,8 @@ def generate_dataset(system_name):
         F = np.linalg.inv(R + B.T @ X @ B) @ B.T @ X @ A
 
         for i_rollout in range(rollout_len):
-
-            if np.linalg.norm(x_data[i_contr * rollout_len + i_rollout, :] - x_target) < finish_threshold:
+            dist_to_target = np.linalg.norm(x_data[i_contr * rollout_len + i_rollout, :] - x_target)
+            if dist_to_target < finish_threshold:
                 finish_token[i_contr * rollout_len + i_rollout] = 1.0
                 break
             if i_rollout == (rollout_len - 1):
@@ -73,6 +81,12 @@ def generate_dataset(system_name):
             u_data[i_contr * rollout_len + i_rollout, :] = -F @ x_data[i_contr * rollout_len + i_rollout, :]
             x_data[i_contr * rollout_len + i_rollout + 1, :] = A @ x_data[i_contr * rollout_len + i_rollout, :] + \
                                                                B @ u_data[i_contr * rollout_len + i_rollout, :]
+
+        if baseline:
+            stats['rollout_len'][i_contr] = rollout_len  # max length of the rollout
+            stats['i_rollout'][i_contr] = i_rollout  # length of the actual rollout
+            stats['dist_to_target'][i_contr] = dist_to_target  # last dist to target
+            stats['x0'][i_contr] = x0[:, 0]  # initial condition
 
     aux = (u_data == np.zeros((1, n_input))).sum(axis=1)
     aux1 = np.setdiff1d(np.nonzero(aux), np.nonzero(finish_token))
@@ -87,5 +101,14 @@ def generate_dataset(system_name):
     os.makedirs('datasets', exist_ok=True)
     with open(f'datasets/dataset_{name}.pkl', 'wb') as handle:
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
     handle.close()
+
+    if baseline:
+        with open(f'datasets/dataset_{name}_baseline_stats.pkl', 'wb') as handle:
+            pickle.dump(stats, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        handle.close()
+
+        with open(f'datasets/dataset_{name}_baseline_data.pkl', 'wb') as handle:
+            pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        handle.close()
+
